@@ -1,0 +1,7 @@
+# Chrome Extension Files
+*.crx
+*.pem
+
+# IDE/System Files (Optional but Recommended)
+# Example for Mac/Linux
+.DS_Store
