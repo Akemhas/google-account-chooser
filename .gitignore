@@ -2,6 +2,9 @@
 *.crx
 *.pem
 
+# Aseprite Files
+*.aseprite
+
 # IDE/System Files (Optional but Recommended)
 # Example for Mac/Linux
 .DS_Store
