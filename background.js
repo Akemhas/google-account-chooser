@@ -1,10 +1,10 @@
 async function registerContentScript() {
   await chrome.scripting.unregisterContentScripts()
 
-  const { enabled = true, mode = 'exclude', sites = [] } = await chrome.storage.sync.get([
-    'enabled',
-    'mode',
-    'sites',
+  const { enabled = true, mode = "exclude", sites = [] } = await chrome.storage.sync.get([
+    "enabled",
+    "mode",
+    "sites",
   ])
 
   if (!enabled) return
@@ -12,13 +12,13 @@ async function registerContentScript() {
   let matches = []
   
   if (sites.length > 0) {
-    if (mode === 'include') {
+    if (mode === "include") {
       matches = sites.map(site => `*://*.${site}/*`)
       matches = matches.concat(sites.map(site => `*://${site}/*`))
     } else {
       matches = ["*://*/*"]
     }
-  } else if (mode === 'exclude') {
+  } else if (mode === "exclude") {
     matches = ["*://*/*"]
   } else {
     return
@@ -38,7 +38,7 @@ async function registerContentScript() {
 registerContentScript()
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'sync') {
+  if (areaName === "sync") {
     setTimeout(registerContentScript, 50) 
   }
 })
