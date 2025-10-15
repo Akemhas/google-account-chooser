@@ -1,121 +1,121 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <title>Account Chooser Redirect</title>
     <style>
-      * {
-        box-sizing: border-box;
-      }
+        * {
+            box-sizing: border-box;
+        }
 
-      body {
-        font-family: "Segoe UI", Roboto, sans-serif;
-        background-color: #fff;
-        color: #202124;
-        min-width: 280px;
-        padding: 14px;
-        margin: 0;
-      }
+        body {
+            font-family: "Segoe UI", Roboto, sans-serif;
+            background-color: #fff;
+            color: #202124;
+            min-width: 280px;
+            padding: 14px;
+            margin: 0;
+        }
 
-      h1 {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 10px;
-        text-align: center;
-        color: #1a73e8;
-      }
+        h1 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+            color: #1a73e8;
+        }
 
-      .row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin: 8px 0;
-      }
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
 
-      label {
-        font-size: 14px;
-      }
+        label {
+            font-size: 14px;
+        }
 
-      input[type="checkbox"] {
-        transform: scale(1.2);
-        margin-right: 8px;
-        cursor: pointer;
-      }
+        input[type="checkbox"] {
+            transform: scale(1.2);
+            margin-right: 8px;
+            cursor: pointer;
+        }
 
-      select,
-      input[type="text"] {
-        width: 100%;
-        padding: 6px 8px;
-        border: 1px solid #dadce0;
-        border-radius: 6px;
-        font-size: 13px;
-        outline: none;
-      }
+        select,
+        input[type="text"] {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
 
-      select:focus,
-      input:focus {
-        border-color: #1a73e8;
-        box-shadow: 0 0 0 2px #e8f0fe;
-      }
+        select:focus,
+        input:focus {
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px #e8f0fe;
+        }
 
-      button {
-        width: 100%;
-        margin-top: 14px;
-        padding: 8px;
-        background-color: #1a73e8;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-weight: 500;
-        font-size: 14px;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
+        button {
+            width: 100%;
+            margin-top: 14px;
+            padding: 8px;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
 
-      button:hover {
-        background-color: #155ab6;
-      }
+        button:hover {
+            background-color: #155ab6;
+        }
 
-      small {
-        display: block;
-        margin-top: 6px;
-        font-size: 11px;
-        color: #5f6368;
-        text-align: center;
-      }
+        small {
+            display: block;
+            margin-top: 6px;
+            font-size: 11px;
+            color: #5f6368;
+            text-align: center;
+        }
     </style>
-  </head>
+</head>
 
-  <body>
-    <h1>Account Chooser Redirect</h1>
+<body>
+<h1>Account Chooser Redirect</h1>
 
-    <div class="row">
-      <label for="enabled">
-        <input type="checkbox" id="enabled" />
+<div class="row">
+    <label for="enabled">
+        <input id="enabled" type="checkbox"/>
         Enable Redirect
-      </label>
-    </div>
+    </label>
+</div>
 
-    <div class="row">
-      <label for="mode">Mode:</label>
-      <select id="mode">
+<div class="row">
+    <label for="mode">Mode:</label>
+    <select id="mode">
         <option value="exclude">Exclude List</option>
         <option value="include">Include Only</option>
-      </select>
-    </div>
+    </select>
+</div>
 
-    <div class="row" style="flex-direction: column; align-items: flex-start;">
-      <label for="sites">Sites (comma separated):</label>
-      <input
-        type="text"
-        id="sites"
-        placeholder="e.g. web.whatsapp.com, mail.google.com"
-      />
-    </div>
+<div class="row" style="flex-direction: column; align-items: flex-start;">
+    <label for="sites">Sites (comma separated):</label>
+    <input
+            id="sites"
+            placeholder="e.g. web.whatsapp.com, mail.google.com"
+            type="text"
+    />
+</div>
 
-    <button id="save">Save</button>
+<button id="save">Save</button>
 
-    <small>Made by Akemhas</small>
+<small>Made by Akemhas</small>
 
-    <script src="popup.js"></script>
-  </body>
+<script src="popup.js"></script>
+</body>
 </html>

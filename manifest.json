@@ -3,8 +3,14 @@
   "name": "Google Account Chooser Redirect",
   "version": "1.2",
   "description": "Automatically open Google Docs/Drive links with account chooser.",
-  "permissions": ["storage", "scripting", "activeTab", "alarms"],
-  "host_permissions": ["*://*/*"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
