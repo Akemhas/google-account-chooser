@@ -5,8 +5,7 @@
   "description": "Automatically open Google Docs/Drive links with account chooser.",
   "permissions": [
     "storage",
-    "scripting",
-    "activeTab"
+    "scripting"
   ],
   "host_permissions": [
     "*://*/*"

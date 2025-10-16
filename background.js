@@ -1,34 +1,22 @@
 async function registerContentScript() {
     await chrome.scripting.unregisterContentScripts()
 
-    const {enabled = true, mode = "exclude", sites = []} = await chrome.storage.sync.get([
+    const {enabled = true, excludedSources = []} = await chrome.storage.sync.get([
         "enabled",
-        "mode",
-        "sites",
+        "excludedSources",
     ])
 
     if (!enabled) return
 
-    let matches = []
-
-    if (sites.length > 0) {
-        if (mode === "include") {
-            matches = sites.map(site => `*://*.${site}/*`)
-            matches = matches.concat(sites.map(site => `*://${site}/*`))
-        } else {
-            matches = ["*://*/*"]
-        }
-    } else if (mode === "exclude") {
-        matches = ["*://*/*"]
-    } else {
-        return
-    }
+    // Build exclude patterns for excluded sources
+    const excludeMatches = excludedSources.map(site => `*://${site}/*`)
 
     await chrome.scripting.registerContentScripts([
         {
             id: "redirector_script",
             js: ["redirector.js"],
-            matches: matches,
+            matches: ["*://*/*"],
+            excludeMatches: excludeMatches,
             runAt: "document_start",
             allFrames: false,
         },
@@ -37,10 +25,10 @@ async function registerContentScript() {
 
 registerContentScript()
 
-let timeout;
+let timeout
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "sync") {
-        clearTimeout(timeout);
-        timeout = setTimeout(registerContentScript, 500);
+        clearTimeout(timeout)
+        timeout = setTimeout(registerContentScript, 500)
     }
-});
+})
