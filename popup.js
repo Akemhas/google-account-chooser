@@ -1,3 +1,24 @@
+// --- Helper Functions for HTML Generation ---
+
+const getTargetHtml = (site) => `
+    <div class="list-item is-adding">
+        <div class="list-item-content">
+            <span class="item-name">${site}</span>
+        </div>
+        <button class="remove-btn" data-site="${site}">Remove</button>
+    </div>
+`;
+
+const getExcludedHtml = (site) => `
+    <div class="list-item is-adding">
+        <div class="list-item-content">
+            <span class="item-name">${site}</span>
+        </div>
+        <button class="remove-btn" data-site="${site}">Remove</button>
+    </div>
+`;
+
+// --- Main DOM Content Loaded Listener ---
 document.addEventListener("DOMContentLoaded", async () => {
     const enabled = document.getElementById("enabled")
     const tabs = document.querySelectorAll(".tab")
@@ -10,7 +31,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const addTargetBtn = document.getElementById("addTargetBtn")
     const addExcludedBtn = document.getElementById("addExcludedBtn")
 
-    // Load saved settings
     const data = await chrome.storage.sync.get([
         "enabled",
         "targetSites",
@@ -19,9 +39,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     enabled.checked = data.enabled ?? true
     let targetSites = data.targetSites && data.targetSites.length > 0 ? data.targetSites : [...DEFAULT_GOOGLE_DOMAINS]
+    targetSites.sort()
     let excludedSourceSites = data.excludedSourceSites ?? []
 
-    // Tab switching
+    const saveSettings = async () => {
+        await chrome.storage.sync.set({
+            enabled: enabled.checked,
+            targetSites,
+            excludedSourceSites,
+        })
+    }
+
+    // Function to handle the add process with animation and immediate DOM update
+    const handleAddSite = async (inputElement, listArray, listElement, htmlGenerator) => {
+        const site = inputElement.value.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "")
+
+        if (site && !listArray.includes(site)) {
+            listArray.push(site)
+            inputElement.value = ""
+            await saveSettings()
+
+            const range = document.createRange();
+
+            const fragment = range.createContextualFragment(htmlGenerator(site));
+            const newElement = fragment.firstElementChild;
+
+            if (!newElement) return;
+
+            listElement.prepend(newElement);
+            void newElement.offsetHeight;
+            newElement.classList.remove('is-adding');
+        }
+    }
+
     tabs.forEach(tab => {
         tab.addEventListener("click", () => {
             tabs.forEach(t => t.classList.remove("active"))
@@ -31,79 +81,68 @@ document.addEventListener("DOMContentLoaded", async () => {
         })
     })
 
-    // Render lists
-    const renderTargets = () => {
-        targetsList.innerHTML = targetSites.map(site => `
-            <div class="list-item">
-                <div class="list-item-content">
-                    <span class="item-name">${site}</span>
-                </div>
-                <button class="remove-btn" onclick="removeTarget('${site}')">Remove</button>
-            </div>
-        `).join("")
+    const renderTargetsInitial = () => {
+        targetsList.innerHTML = targetSites.map(site =>
+            getTargetHtml(site).replace(' is-adding', '')
+        ).join("")
     }
 
-    const renderExcluded = () => {
-        excludedList.innerHTML = excludedSourceSites.map(site => `
-            <div class="list-item">
-                <div class="list-item-content">
-                    <span class="item-name">${site}</span>
-                </div>
-                <button class="remove-btn" onclick="removeExcluded('${site}')">Remove</button>
-            </div>
-        `).join("")
+    const renderExcludedInitial = () => {
+        excludedList.innerHTML = excludedSourceSites.map(site =>
+            getExcludedHtml(site).replace(' is-adding', '')
+        ).join("")
     }
 
-    // Save to storage
-    const saveSettings = async () => {
-        await chrome.storage.sync.set({
-            enabled: enabled.checked,
-            targetSites,
-            excludedSourceSites,
-        })
+    const removeTarget = async (site, element) => {
+        element.classList.add('is-removing');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        targetSites = targetSites.filter(s => s !== site);
+        await saveSettings();
+        element.remove();
     }
 
-    // Add target
+    const removeExcluded = async (site, element) => {
+        element.classList.add('is-removing');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        excludedSourceSites = excludedSourceSites.filter(s => s !== site);
+        await saveSettings();
+        element.remove();
+    }
+
+    targetsList.addEventListener("click", (e) => {
+        if (e.target.classList.contains("remove-btn")) {
+            const site = e.target.dataset.site;
+            const listItem = e.target.closest('.list-item');
+            if (site && listItem) {
+                removeTarget(site, listItem);
+            }
+        }
+    })
+
+    excludedList.addEventListener("click", (e) => {
+        if (e.target.classList.contains("remove-btn")) {
+            const site = e.target.dataset.site;
+            const listItem = e.target.closest('.list-item');
+            if (site && listItem) {
+                removeExcluded(site, listItem);
+            }
+        }
+    })
+
+    // --- Add target button now calls the helper function ---
     addTargetBtn.addEventListener("click", async () => {
-        const site = targetInput.value.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "")
-        if (site && !targetSites.includes(site)) {
-            targetSites.push(site)
-            targetInput.value = ""
-            renderTargets()
-            await saveSettings()
-        }
+        await handleAddSite(targetInput, targetSites, targetsList, getTargetHtml);
     })
 
-    // Add excluded
+    // --- Add excluded button now calls the helper function ---
     addExcludedBtn.addEventListener("click", async () => {
-        const site = excludedInput.value.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "")
-        if (site && !excludedSourceSites.includes(site)) {
-            excludedSourceSites.push(site)
-            excludedInput.value = ""
-            renderExcluded()
-            await saveSettings()
-        }
+        await handleAddSite(excludedInput, excludedSourceSites, excludedList, getExcludedHtml);
     })
 
-    // Remove functions
-    window.removeTarget = async (site) => {
-        targetSites = targetSites.filter(s => s !== site)
-        renderTargets()
-        await saveSettings()
-    }
-
-    window.removeExcluded = async (site) => {
-        excludedSourceSites = excludedSourceSites.filter(s => s !== site)
-        renderExcluded()
-        await saveSettings()
-    }
-
-    // Enable/Disable toggle
     enabled.addEventListener("change", async () => {
         await saveSettings()
     })
 
-    // Initial render
-    renderTargets()
-    renderExcluded()
+    renderTargetsInitial()
+    renderExcludedInitial()
 })
