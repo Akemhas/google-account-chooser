@@ -1,51 +1,77 @@
 (async () => {
+    // Get configuration settings from storage
     const {
-        enabled = true, targetSites = DEFAULT_GOOGLE_DOMAINS, excludedSourceSites = []
-    } = await chrome.storage.sync.get(["enabled", "targetSites", "excludedSourceSites",])
+        enabled = true, targetSites = DEFAULT_GOOGLE_DOMAINS, excludedSourceSites = [], skipRedirectIfDone = true
+    } = await chrome.storage.sync.get(["enabled", "targetSites", "excludedSourceSites", "skipRedirectIfDone"]);
 
-    if (!enabled) return
+    if (!enabled) return;
 
-    const currentSite = location.hostname
+    const currentSiteHostname = location.hostname;
+    const currentUrl = window.location.href;
 
     // Skip if current source site is in excluded list
-    if (excludedSourceSites.some(site => currentSite === site || currentSite.endsWith(`.${site}`))) {
-        return
+    if (excludedSourceSites.some(site => currentSiteHostname === site || currentSiteHostname.endsWith(`.${site}`))) {
+        return;
     }
 
-    const targets = targetSites
+    // Determine if the current page is already 'done' with redirection
+    const isSourceAlreadyDone = currentUrl.includes("gacrdone=1");
+
+    const targets = targetSites;
 
     const isTargetLink = (url) => {
         try {
-            const {hostname} = new URL(url)
-            return targets.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))
+            const {hostname} = new URL(url);
+            // Check if the hostname matches any target domain or is a subdomain of a target domain
+            return targets.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
         } catch {
-            return false
+            return false;
         }
-    }
+    };
 
     const redirect = (url) => {
-        if (!isTargetLink(url)) return false
+        if (!isTargetLink(url)) return false; // Not a target link, do nothing.
 
-        const isAlreadyChoosy = url.includes("AccountChooser") || url.includes("authuser=") || url.includes("gacrdone=1")
+        const isAlreadyChoosy = url.includes("AccountChooser") || url.includes("authuser=") || url.includes("gacrdone=1");
 
-        if (isAlreadyChoosy) return false
+        if (isAlreadyChoosy) {
+            return false;
+        }
 
-        const continueUrl = url + (url.includes('?') ? '&' : '?') + 'gacrdone=1'
-        const chooserUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(continueUrl)
+        if (skipRedirectIfDone && isSourceAlreadyDone) {
+            // Return the new URL instead of redirecting directly.
+            return url + (url.includes('?') ? '&' : '?') + 'gacrdone=1';
+        }
 
-        location.replace(chooserUrl)
-        return true
+        const continueUrl = url + (url.includes('?') ? '&' : '?') + 'gacrdone=1';
+        return "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(continueUrl);
+    };
+
+    // --- Check current URL on load ---
+
+// Check current URL on load: Only perform a full redirect if NO redirect flags are present.
+    const isInitialRedirectRequired = isTargetLink(currentUrl) &&
+        !currentUrl.includes("AccountChooser") &&
+        !currentUrl.includes("authuser=") &&
+        !currentUrl.includes("gacrdone=1");
+
+    if (isInitialRedirectRequired) {
+        const continueUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'gacrdone=1';
+        const chooserUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(continueUrl);
+        location.replace(chooserUrl);
+        return;
     }
 
-    // Check current URL on load
-    if (redirect(window.location.href)) return
 
-    // Handle link clicks
     document.addEventListener("click", (event) => {
-        const link = event.target.closest("a")
+        const link = event.target.closest("a");
         if (link?.href) {
-            event.preventDefault()
-            redirect(link.href)
+            const resultUrl = redirect(link.href);
+
+            if (resultUrl) {
+                event.preventDefault();
+                location.href = resultUrl;
+            }
         }
-    })
-})()
+    });
+})();
