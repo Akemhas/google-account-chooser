@@ -1,16 +1,12 @@
 # Google Account Chooser Redirect
 
-Chrome/Vivaldi extension for forcing supported Google links through Google's account chooser before the destination app opens.
+A Chrome/Vivaldi extension for improving the multi-account experience across Google services.
 
-## What It Does
+## Overview
 
-The extension can intercept:
+This extension routes supported Google links and navigations through Google's Account Chooser before the final destination opens. It can intercept external clicks, typed or bookmarked Google URLs, and navigation between supported Google apps.
 
-- clicks to supported Google services from non-Google pages
-- typed or bookmarked Google service URLs
-- navigation between supported Google apps
-
-Supported services are configurable and default to a wider Google domain list including Drive, Docs, Gmail, Calendar, Photos, Meet, Chat, Forms, Cloud, Firebase, and others.
+When working with multiple Google accounts, this helps you choose the correct account before opening the destination and reduces accidental opens in the wrong profile. The supported services are configurable and default to a wider Google domain list including Drive, Docs, Gmail, Calendar, Photos, Meet, Chat, Forms, Cloud, Firebase, and others.
 
 ## Key Features
 

@@ -1,52 +1,96 @@
 # Privacy Policy for Google Account Chooser Redirect
 
-**Last Updated:** March 27, 2026
+**Last Updated:** March 28, 2026
 
-## 1. Data Collection and Storage
+## 1. Overview
 
-This extension runs locally in the browser. It does not send browsing data, account selections, or settings to any external server controlled by the developer.
+Google Account Chooser Redirect runs locally in the browser and is designed to help users open supported Google service URLs with the correct Google account.
 
-The extension stores user preferences in `chrome.storage.sync` so they can persist across the user's signed-in browser profile.
+The extension does not sell user data, does not transfer user data to the developer's servers, and does not use remote analytics, advertising, or tracking services.
 
-Stored settings may include:
+## 2. Data the Extension May Process or Store
+
+To provide its core functionality, the extension may process or store the following categories of data inside the user's browser profile:
+
+- **Personally identifiable information**
+  This may include an email address if the user enters an email-based `authuser` value in a remembered account rule.
+- **Authentication information**
+  This includes user-entered `authuser` values and account-selection hints used to open supported Google services with the intended account.
+- **Web history**
+  The extension reads supported page URLs and top-level navigation events in order to decide whether a page should be routed through Google Account Chooser.
+- **User activity**
+  The extension listens for clicks on supported Google service links so it can redirect those links through Google Account Chooser when enabled.
+
+The extension does **not** collect or process the following categories as part of its intended functionality:
+
+- health information
+- financial and payment information
+- personal communications
+- location
+- website content beyond the link URL or page URL needed for redirect decisions
+
+## 3. What Is Stored in `chrome.storage.sync`
+
+The extension stores settings in `chrome.storage.sync` so preferences can persist across the user's signed-in browser profile.
+
+Stored data may include:
 
 - enabled or disabled state
 - target Google service domains
 - excluded source domains
 - redirect behavior toggles
 - preferred account rules
-- user-entered `authuser` values inside preferred account rules
+- document-specific remembered rules
+- user-entered `authuser` values, including numeric account indexes or email-based account hints
+- popup tab preference
 
-`authuser` values can be numeric account indexes or user-entered account hints. They are stored only for the extension's redirect behavior and are not transmitted to the developer.
+This stored data remains in the user's browser storage and is not transmitted to the developer.
 
-## 2. How Stored Data Is Used
+## 4. How the Data Is Used
 
-Stored settings are used only to decide:
+The extension uses the processed or stored data only to provide its single purpose functionality, including:
 
-- when a Google URL should be redirected through Account Chooser
-- when an existing account hint should be respected
-- when a saved preferred-account rule should add `authuser` directly
-- which source sites should be excluded from click interception
+- deciding when a supported Google URL should be routed through Google Account Chooser
+- deciding when an existing account hint should be respected
+- applying remembered account rules
+- suggesting document-specific rules after chooser-based redirects
+- restoring extension UI preferences
 
-## 3. Permissions Used
+## 5. Data Sharing and Sale
+
+The developer does not:
+
+- sell user data
+- rent user data
+- transfer user data to data brokers
+- share user data with advertisers, analytics providers, or third parties for independent use
+
+All core behavior is executed locally in the browser.
+
+## 6. Permissions Used
 
 The extension currently requests these permissions:
 
 - `storage`
   Used to persist extension settings in `chrome.storage.sync`.
 - `scripting`
-  Used to register and inject the content script that watches supported pages and links.
+  Used to register and inject the content script that detects supported Google service links and pages.
 - `tabs`
-  Used to inspect and update the current tab during redirect handling and popup-assisted rule capture.
+  Used to inspect and update the current tab during redirect handling and popup-related rule workflows.
 - `webNavigation`
-  Used to observe top-level navigations so direct typed/bookmarked Google URLs can be intercepted earlier.
+  Used to observe top-level navigations so typed or bookmarked supported Google URLs can be intercepted earlier.
 - `host_permissions` = `*://*/*`
-  Required because the extension registers a content script broadly and then applies its own internal filtering rules.
+  Required so the extension can run on pages where supported Google service links may appear and route those links according to the user's settings.
 
-## 4. Data Sharing
+## 7. Data Retention and User Control
 
-The developer does not sell, rent, or transfer this stored settings data to third parties. Extension behavior is executed locally in the browser.
+Users can control stored extension data by:
 
-## 5. Changes
+- editing or removing saved rules in the extension popup
+- changing extension settings in the popup
+- disabling or uninstalling the extension
+- clearing extension storage through the browser's extension management tools
 
-This policy may be updated when extension behavior or stored settings change. The date at the top of this document will be updated when that happens.
+## 8. Changes to This Policy
+
+This Privacy Policy may be updated when the extension's behavior, permissions, or data handling changes. The "Last Updated" date at the top of this document will be revised when changes are made.
