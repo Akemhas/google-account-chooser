@@ -465,11 +465,18 @@ document.addEventListener("DOMContentLoaded", async () => {
             badge.className = "rule-authuser-badge";
             badge.textContent = `authuser=${rule.authuser}`;
 
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "remove-btn";
+            removeBtn.textContent = "Remove";
+            removeBtn.setAttribute("aria-label", `Remove saved document rule for ${rule.targetDomain}${rule.targetPathPrefix}`);
+            removeBtn.dataset.ruleId = rule.id;
+
             textBlock.appendChild(name);
             textBlock.appendChild(meta);
             content.appendChild(textBlock);
             content.appendChild(badge);
             item.appendChild(content);
+            item.appendChild(removeBtn);
             savedDocumentRulesList.appendChild(item);
         });
     };
@@ -672,6 +679,25 @@ document.addEventListener("DOMContentLoaded", async () => {
             await saveSettings();
             renderPreferredRules();
             renderSavedDocumentRules();
+        } catch (error) {
+            preferredAccountRules = previousRules;
+        }
+    });
+
+    savedDocumentRulesList.addEventListener("click", async (e) => {
+        if (!e.target.classList.contains("remove-btn")) return;
+
+        const ruleId = e.target.dataset.ruleId;
+        if (!ruleId) return;
+
+        const previousRules = [...preferredAccountRules];
+        preferredAccountRules = preferredAccountRules.filter((rule) => rule.id !== ruleId);
+
+        try {
+            await saveSettings();
+            renderPreferredRules();
+            renderSavedDocumentRules();
+            renderSuggestedRuleHint();
         } catch (error) {
             preferredAccountRules = previousRules;
         }
