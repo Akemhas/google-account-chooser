@@ -1,35 +1,44 @@
 # Google Account Chooser Redirect
 
-A simple Chrome extension designed to improve the multi-account experience for Google services.
+Chrome/Vivaldi extension for forcing supported Google links through Google's account chooser before the destination app opens.
 
-## Overview
+## What It Does
 
-This extension automatically redirects clicks on Google Docs, Google Drive, and Google Forms links to the **Google
-Account Chooser** page before loading the final destination.
+The extension can intercept:
 
-When working with multiple Google accounts logged in, this behavior ensures you are prompted to select the correct
-account for the document or service, preventing the "You need permission" error or accidental access using the wrong
-account.
+- clicks to supported Google services from non-Google pages
+- typed or bookmarked Google service URLs
+- navigation between supported Google apps
 
-## Features
+Supported services are configurable and default to a wider Google domain list including Drive, Docs, Gmail, Calendar, Photos, Meet, Chat, Forms, Cloud, Firebase, and others.
 
-* **Automatic Account Chooser Redirection:** Links matching `docs.google.com`, `drive.google.com`, and
-  `forms.google.com` are intercepted and routed through `accounts.google.com/AccountChooser`.
-* **Toggle Enable/Disable:** A simple checkbox in the extension popup allows you to quickly turn the redirect logic on
-  or off globally.
-* **Site Filtering:** Control where the redirect logic runs:
-    * **Exclude List (Default):** The redirect runs on *all* sites except those you specify.
-    * **Include Only:** The redirect runs *only* on the sites you specify.
-* **No Data Collection:** The extension stores its settings (enabled state, mode, and site list) locally using Chrome's
-  `storage.sync` API and does not collect or transmit any personal data.
+## Key Features
+
+- global enable/disable toggle
+- configurable target Google domains
+- excluded source domains where click interception should not run
+- optional direct-navigation interception for typed/bookmarked URLs
+- optional Google-to-Google interception
+- optional preferred-account rules that add `authuser` directly instead of showing chooser
+- suggested account rule capture after chooser-based redirects
+
+## Stored Settings
+
+The extension stores the following in `chrome.storage.sync`:
+
+- enabled state
+- target service domains
+- excluded source domains
+- redirect behavior toggles
+- preferred account rules, including user-entered `authuser` values
 
 ## Installation
 
-1. Download the repository source code as a ZIP file or clone the repository.
-2. Unzip the files to a local directory.
-3. Navigate to `chrome://extensions/` in your Chrome browser.
-4. Enable **Developer mode** using the toggle switch in the top right.
-5. Click the **Load unpacked** button and select the directory containing the extension files (the folder with
-   `manifest.json`).
+1. Open `chrome://extensions/` or `vivaldi://extensions/`.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select the `google-account-chooser` folder.
 
-The extension should now be installed and ready to use.
+## Repo Notes
+
+The repository root also contains older packaged builds and legacy files. The active unpacked extension source lives in the `google-account-chooser` directory.

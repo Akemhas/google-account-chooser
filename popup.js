@@ -2,6 +2,7 @@ const createListItem = (site) => {
     const container = document.createElement('div');
     container.className = 'list-item is-adding';
     container.setAttribute('role', 'listitem');
+    container.dataset.site = site;
 
     const content = document.createElement('div');
     content.className = 'list-item-content';
@@ -64,6 +65,28 @@ const sanitizeDomainInput = (input) => {
 };
 
 const sanitizeAuthuserInput = (input) => input.trim();
+const normalizeRulePathname = globalThis.normalizeRulePathname || ((pathname) => {
+    if (typeof pathname !== "string" || !pathname) return "";
+
+    const normalized = pathname
+        .replace(/\/u\/[^/]+/g, "")
+        .replace(/\/{2,}/g, "/")
+        .replace(/\/$/, "");
+
+    return normalized || "/";
+});
+
+const sanitizePathPrefixInput = (input) => {
+    const trimmed = input.trim();
+    if (!trimmed) return "";
+
+    try {
+        const parsed = new URL(trimmed.startsWith("http") ? trimmed : `https://example.com${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`);
+        return normalizeRulePathname(parsed.pathname);
+    } catch {
+        return normalizeRulePathname(trimmed.startsWith("/") ? trimmed : `/${trimmed}`);
+    }
+};
 
 const SERVICE_PRESETS = [
     {label: "Drive", domain: "drive.google.com"},
@@ -75,20 +98,35 @@ const SERVICE_PRESETS = [
     {label: "Chat", domain: "chat.google.com"},
     {label: "Forms", domain: "forms.google.com"},
 ];
+const POPUP_ACTIVE_TAB_KEY = "popupActiveTab";
 
 const createPreferredRuleItem = (rule) => {
     const container = document.createElement('div');
-    container.className = 'list-item';
+    container.className = 'list-item rule-list-item';
     container.setAttribute('role', 'listitem');
 
     const content = document.createElement('div');
-    content.className = 'list-item-content';
+    content.className = 'list-item-content rule-list-content';
+
+    const textBlock = document.createElement('div');
+    textBlock.className = 'rule-text-block';
 
     const name = document.createElement('span');
-    name.className = 'item-name';
+    name.className = 'item-name rule-primary-line';
+    name.textContent = `${rule.targetDomain}${rule.targetPathPrefix ?? ""}`;
 
-    const sourceLabel = rule.sourceDomain ? ` when opened from ${rule.sourceDomain}` : ' from any source';
-    name.textContent = `${rule.targetDomain}${sourceLabel} uses authuser=${rule.authuser}`;
+    const meta = document.createElement('span');
+    meta.className = 'rule-meta-line';
+    meta.textContent = rule.sourceDomain
+        ? `Source: ${rule.sourceDomain}`
+        : 'Source: any site';
+
+    textBlock.appendChild(name);
+    textBlock.appendChild(meta);
+
+    const badge = document.createElement('span');
+    badge.className = 'rule-authuser-badge';
+    badge.textContent = `authuser=${rule.authuser}`;
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-btn';
@@ -96,7 +134,8 @@ const createPreferredRuleItem = (rule) => {
     removeBtn.setAttribute('aria-label', `Remove preferred account rule for ${rule.targetDomain}`);
     removeBtn.dataset.ruleId = rule.id;
 
-    content.appendChild(name);
+    content.appendChild(textBlock);
+    content.appendChild(badge);
     container.appendChild(content);
     container.appendChild(removeBtn);
 
@@ -114,31 +153,7 @@ const createPresetChip = (preset, datasetKey) => {
 
 const isValidAuthuser = (value) => {
     if (!value) return false;
-    return /^[^\\s]+$/.test(value);
-};
-
-const parseCurrentTabRuleCandidate = (rawUrl) => {
-    if (!rawUrl) return null;
-
-    try {
-        const url = new URL(rawUrl);
-        const authuser = url.searchParams.get("authuser");
-
-        if (!authuser) return null;
-
-        const isGoogleDomain =
-            url.hostname === "google.com" ||
-            url.hostname.endsWith(".google.com");
-
-        if (!isGoogleDomain) return null;
-
-        return {
-            targetDomain: url.hostname.toLowerCase(),
-            authuser: authuser.trim(),
-        };
-    } catch {
-        return null;
-    }
+    return /^\S+$/.test(value);
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -155,15 +170,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     const targetsList = document.getElementById("targetsList");
     const excludedList = document.getElementById("excludedList");
     const preferredRulesList = document.getElementById("preferredRulesList");
+    const savedDocumentRulesList = document.getElementById("savedDocumentRulesList");
     const targetPresetGrid = document.getElementById("targetPresetGrid");
     const rulePresetGrid = document.getElementById("rulePresetGrid");
     const targetInput = document.getElementById("targetInput");
     const excludedInput = document.getElementById("excludedInput");
     const preferredTargetInput = document.getElementById("preferredTargetInput");
+    const preferredTargetPathInput = document.getElementById("preferredTargetPathInput");
     const preferredSourceInput = document.getElementById("preferredSourceInput");
     const preferredAuthuserInput = document.getElementById("preferredAuthuserInput");
-    const currentTabRuleHint = document.getElementById("currentTabRuleHint");
-    const useCurrentTabRuleBtn = document.getElementById("useCurrentTabRuleBtn");
     const suggestedRuleHint = document.getElementById("suggestedRuleHint");
     const useSuggestedRuleBtn = document.getElementById("useSuggestedRuleBtn");
     const addTargetBtn = document.getElementById("addTargetBtn");
@@ -175,12 +190,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     let targetSites = [];
     let excludedSourceSites = [];
     let preferredAccountRules = [];
-    let currentTabRuleCandidate = null;
     let suggestedRuleCandidate = null;
     let activeTabId = null;
+    let activePopupTab = "preferences";
 
     const updateEnabledState = () => {
         container.classList.toggle("is-disabled", !enabled.checked);
+    };
+
+    const setActiveTab = (tabName) => {
+        const nextTab = document.querySelector(`.tab[data-tab="${tabName}"]`) ? tabName : "preferences";
+        activePopupTab = nextTab;
+
+        tabs.forEach((tab) => {
+            const isActive = tab.dataset.tab === nextTab;
+            tab.classList.toggle("active", isActive);
+            tab.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+
+        panels.forEach((panel) => {
+            panel.classList.toggle("active", panel.id === `${nextTab}-panel`);
+        });
+    };
+
+    const persistActiveTab = async () => {
+        try {
+            await chrome.storage.sync.set({
+                [POPUP_ACTIVE_TAB_KEY]: activePopupTab,
+            });
+        } catch (error) {
+            console.error("Failed to persist popup tab:", error);
+        }
     };
 
     try {
@@ -195,6 +235,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             "interceptGoogleNavigation",
             "usePreferredAccountRules",
             "preferredAccountRules",
+            POPUP_ACTIVE_TAB_KEY,
         ]);
 
         enabled.checked = data.enabled ?? true;
@@ -207,6 +248,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         targetSites.sort();
         excludedSourceSites = data.excludedSourceSites ?? [];
         preferredAccountRules = Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [];
+        activePopupTab = typeof data[POPUP_ACTIVE_TAB_KEY] === "string" ? data[POPUP_ACTIVE_TAB_KEY] : "preferences";
         updateEnabledState();
     } catch (error) {
         console.error("Failed to load settings:", error);
@@ -235,18 +277,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     };
 
-    const renderCurrentTabRuleHint = () => {
-        if (!currentTabRuleCandidate) {
-            currentTabRuleHint.textContent = "Open a supported Google page with an authuser parameter to capture its account.";
-            useCurrentTabRuleBtn.disabled = true;
-            return;
-        }
-
-        currentTabRuleHint.textContent =
-            `Current tab: ${currentTabRuleCandidate.targetDomain} with authuser=${currentTabRuleCandidate.authuser}`;
-        useCurrentTabRuleBtn.disabled = false;
-    };
-
     const renderPresetChips = () => {
         targetPresetGrid.innerHTML = "";
         rulePresetGrid.innerHTML = "";
@@ -264,13 +294,21 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
+        const alreadySaved = preferredAccountRules.some((rule) =>
+            rule.targetDomain === suggestedRuleCandidate.targetDomain &&
+            (rule.targetPathPrefix ?? "") === (suggestedRuleCandidate.targetPathPrefix ?? "") &&
+            (rule.sourceDomain ?? "") === (suggestedRuleCandidate.sourceDomain ?? "") &&
+            rule.authuser === suggestedRuleCandidate.authuser
+        );
+
         const sourceLabel = suggestedRuleCandidate.sourceDomain
             ? ` from ${suggestedRuleCandidate.sourceDomain}`
             : "";
 
-        suggestedRuleHint.textContent =
-            `Suggested from recent chooser: ${suggestedRuleCandidate.targetDomain}${sourceLabel} with authuser=${suggestedRuleCandidate.authuser}`;
-        useSuggestedRuleBtn.disabled = false;
+        suggestedRuleHint.textContent = alreadySaved
+            ? `Already saved: ${suggestedRuleCandidate.targetDomain}${suggestedRuleCandidate.targetPathPrefix}${sourceLabel} with authuser=${suggestedRuleCandidate.authuser}`
+            : `Suggested from recent chooser: ${suggestedRuleCandidate.targetDomain}${suggestedRuleCandidate.targetPathPrefix}${sourceLabel} with authuser=${suggestedRuleCandidate.authuser}`;
+        useSuggestedRuleBtn.disabled = alreadySaved;
     };
 
     const handleAddSite = async (inputElement, listArray, listElement) => {
@@ -317,15 +355,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     tabs.forEach(tab => {
         tab.addEventListener("click", () => {
-            tabs.forEach(t => {
-                t.classList.remove("active");
-                t.setAttribute("aria-selected", "false");
-            });
-            panels.forEach(p => p.classList.remove("active"));
-
-            tab.classList.add("active");
-            tab.setAttribute("aria-selected", "true");
-            document.getElementById(`${tab.dataset.tab}-panel`).classList.add("active");
+            setActiveTab(tab.dataset.tab);
+            void persistActiveTab();
         });
 
         tab.addEventListener("keydown", (e) => {
@@ -364,9 +395,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         preferredAccountRules
             .slice()
+            .filter((rule) => !rule.targetPathPrefix)
             .sort((a, b) => {
                 const byTarget = a.targetDomain.localeCompare(b.targetDomain);
                 if (byTarget !== 0) return byTarget;
+
+                const byPath = (a.targetPathPrefix ?? "").localeCompare(b.targetPathPrefix ?? "");
+                if (byPath !== 0) return byPath;
 
                 const bySource = (a.sourceDomain ?? "").localeCompare(b.sourceDomain ?? "");
                 if (bySource !== 0) return bySource;
@@ -376,23 +411,78 @@ document.addEventListener("DOMContentLoaded", async () => {
             .forEach((rule) => {
                 preferredRulesList.appendChild(createPreferredRuleItem(rule));
             });
+
+        if (!preferredRulesList.children.length) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "rule-card-copy empty-rule-state";
+            emptyState.textContent = "No service-wide rules saved yet.";
+            preferredRulesList.appendChild(emptyState);
+        }
     };
 
-    const refreshCurrentTabRuleCandidate = async () => {
-        try {
-            const [activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
-            activeTabId = activeTab?.id ?? null;
-            currentTabRuleCandidate = parseCurrentTabRuleCandidate(activeTab?.url);
-        } catch (error) {
-            console.error("Failed to inspect active tab:", error);
-            activeTabId = null;
-            currentTabRuleCandidate = null;
+    const renderSavedDocumentRules = () => {
+        savedDocumentRulesList.innerHTML = "";
+
+        const documentSpecificRules = preferredAccountRules
+            .filter((rule) => Boolean(rule.targetPathPrefix))
+            .slice()
+            .sort((a, b) => {
+                const byTarget = a.targetDomain.localeCompare(b.targetDomain);
+                if (byTarget !== 0) return byTarget;
+                return (a.targetPathPrefix ?? "").localeCompare(b.targetPathPrefix ?? "");
+            });
+
+        if (documentSpecificRules.length === 0) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "rule-card-copy empty-rule-state";
+            emptyState.textContent = "No document-specific rules saved yet.";
+            savedDocumentRulesList.appendChild(emptyState);
+            return;
         }
 
-        renderCurrentTabRuleHint();
+        documentSpecificRules.forEach((rule) => {
+            const item = document.createElement("div");
+            item.className = "list-item document-rule-item";
+            item.setAttribute("role", "listitem");
+
+            const content = document.createElement("div");
+            content.className = "list-item-content rule-list-content";
+
+            const textBlock = document.createElement("div");
+            textBlock.className = "rule-text-block";
+
+            const name = document.createElement("span");
+            name.className = "item-name rule-primary-line";
+            name.textContent = `${rule.targetDomain}${rule.targetPathPrefix}`;
+
+            const meta = document.createElement("span");
+            meta.className = "rule-meta-line";
+            meta.textContent = rule.sourceDomain
+                ? `Suggested from ${rule.sourceDomain}`
+                : "Suggested without a source filter";
+
+            const badge = document.createElement("span");
+            badge.className = "rule-authuser-badge";
+            badge.textContent = `authuser=${rule.authuser}`;
+
+            textBlock.appendChild(name);
+            textBlock.appendChild(meta);
+            content.appendChild(textBlock);
+            content.appendChild(badge);
+            item.appendChild(content);
+            savedDocumentRulesList.appendChild(item);
+        });
     };
 
     const refreshSuggestedRuleCandidate = async () => {
+        try {
+            const [activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
+            activeTabId = activeTab?.id ?? null;
+        } catch (error) {
+            console.error("Failed to inspect active tab:", error);
+            activeTabId = null;
+        }
+
         if (typeof activeTabId !== "number") {
             suggestedRuleCandidate = null;
             renderSuggestedRuleHint();
@@ -413,13 +503,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderSuggestedRuleHint();
     };
 
-    const filterList = (searchTerm, listElement, items) => {
+    const filterList = (searchTerm, listElement) => {
         const term = searchTerm.toLowerCase().trim();
         const listItems = listElement.querySelectorAll('.list-item');
 
-        listItems.forEach((item, index) => {
-            const siteName = items[index];
-            if (!siteName) return;
+        listItems.forEach((item) => {
+            const siteName = item.dataset.site ?? "";
 
             if (siteName.toLowerCase().includes(term)) {
                 item.style.display = 'flex';
@@ -430,11 +519,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     targetSearch.addEventListener("input", (e) => {
-        filterList(e.target.value, targetsList, targetSites);
+        filterList(e.target.value, targetsList);
     });
 
     excludedSearch.addEventListener("input", (e) => {
-        filterList(e.target.value, excludedList, excludedSourceSites);
+        filterList(e.target.value, excludedList);
     });
 
     const removeTarget = async (site, element) => {
@@ -515,6 +604,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const addPreferredRule = async () => {
         const targetDomain = sanitizeDomainInput(preferredTargetInput.value);
+        const targetPathPrefix = sanitizePathPrefixInput(preferredTargetPathInput.value);
         const sourceDomain = preferredSourceInput.value.trim()
             ? sanitizeDomainInput(preferredSourceInput.value)
             : "";
@@ -522,6 +612,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const newRule = {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             targetDomain,
+            targetPathPrefix,
             sourceDomain,
             authuser,
         };
@@ -543,6 +634,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const duplicate = preferredAccountRules.some((rule) =>
             rule.targetDomain === targetDomain &&
+            (rule.targetPathPrefix ?? "") === targetPathPrefix &&
             (rule.sourceDomain ?? "") === sourceDomain &&
             rule.authuser === authuser
         );
@@ -557,9 +649,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
             await saveSettings();
             preferredTargetInput.value = "";
+            preferredTargetPathInput.value = "";
             preferredSourceInput.value = "";
             preferredAuthuserInput.value = "";
             renderPreferredRules();
+            renderSavedDocumentRules();
         } catch (error) {
             preferredAccountRules = preferredAccountRules.filter((rule) => rule.id !== newRule.id);
         }
@@ -577,28 +671,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
             await saveSettings();
             renderPreferredRules();
+            renderSavedDocumentRules();
         } catch (error) {
             preferredAccountRules = previousRules;
         }
     });
 
     addPreferredRuleBtn.addEventListener("click", addPreferredRule);
-    useCurrentTabRuleBtn.addEventListener("click", () => {
-        if (!currentTabRuleCandidate) return;
-
-        preferredTargetInput.value = currentTabRuleCandidate.targetDomain;
-        preferredAuthuserInput.value = currentTabRuleCandidate.authuser;
-
-        if (!preferredSourceInput.value.trim()) {
-            preferredSourceInput.focus();
-        } else {
-            preferredAuthuserInput.focus();
-        }
-    });
     useSuggestedRuleBtn.addEventListener("click", () => {
         if (!suggestedRuleCandidate) return;
 
         preferredTargetInput.value = suggestedRuleCandidate.targetDomain;
+        preferredTargetPathInput.value = suggestedRuleCandidate.targetPathPrefix ?? "";
         preferredSourceInput.value = suggestedRuleCandidate.sourceDomain ?? "";
         preferredAuthuserInput.value = suggestedRuleCandidate.authuser;
         preferredAuthuserInput.focus();
@@ -633,7 +717,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderTargetsInitial();
     renderExcludedInitial();
     renderPreferredRules();
+    renderSavedDocumentRules();
     renderPresetChips();
-    await refreshCurrentTabRuleCandidate();
+    setActiveTab(activePopupTab);
     await refreshSuggestedRuleCandidate();
 });

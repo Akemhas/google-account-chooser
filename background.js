@@ -127,6 +127,12 @@ function cleanupSuggestedRules() {
     }
 }
 
+function resetRuntimeState() {
+    pendingRedirectsByTab.clear();
+    completedRedirectsByTab.clear();
+    suggestedRulesByTab.clear();
+}
+
 function setPendingRedirect(tabId, destinationUrl, sourceHostname, navigationType) {
     if (typeof tabId !== "number" || tabId < 0) return;
 
@@ -220,6 +226,17 @@ function normalizeRuleDomain(domain) {
     return typeof domain === "string" ? domain.trim().toLowerCase() : "";
 }
 
+function normalizeRulePathname(pathname) {
+    if (typeof pathname !== "string" || !pathname) return "";
+
+    const normalized = pathname
+        .replace(/\/u\/[^/]+/g, "")
+        .replace(/\/{2,}/g, "/")
+        .replace(/\/$/, "");
+
+    return normalized || "/";
+}
+
 function getDomainSpecificityScore(hostname, domain) {
     if (!domain) return 1;
     if (hostname === domain) return domain.length + 1000;
@@ -227,12 +244,23 @@ function getDomainSpecificityScore(hostname, domain) {
     return -1;
 }
 
+function getPathSpecificityScore(pathname, rulePathPrefix) {
+    if (!rulePathPrefix) return 1;
+    if (pathname === rulePathPrefix) return rulePathPrefix.length + 1000;
+    if (pathname.startsWith(rulePathPrefix.endsWith("/") ? rulePathPrefix : `${rulePathPrefix}/`)) {
+        return rulePathPrefix.length;
+    }
+    return -1;
+}
+
 function findPreferredAccountRule({targetUrl, sourceHostname, preferredAccountRules}) {
     let bestMatch = null;
     let bestScore = -1;
+    const normalizedTargetPath = normalizeRulePathname(targetUrl.pathname);
 
     for (const rule of preferredAccountRules) {
         const targetDomain = normalizeRuleDomain(rule?.targetDomain);
+        const targetPathPrefix = normalizeRulePathname(rule?.targetPathPrefix ?? "");
         const sourceDomain = normalizeRuleDomain(rule?.sourceDomain);
         const authuser = typeof rule?.authuser === "string" ? rule.authuser.trim() : "";
 
@@ -241,6 +269,9 @@ function findPreferredAccountRule({targetUrl, sourceHostname, preferredAccountRu
         const targetScore = getDomainSpecificityScore(targetUrl.hostname, targetDomain);
         if (targetScore < 0) continue;
 
+        const pathScore = getPathSpecificityScore(normalizedTargetPath, targetPathPrefix);
+        if (pathScore < 0) continue;
+
         let sourceScore = 1;
         if (sourceDomain) {
             if (!sourceHostname) continue;
@@ -248,11 +279,12 @@ function findPreferredAccountRule({targetUrl, sourceHostname, preferredAccountRu
             if (sourceScore < 0) continue;
         }
 
-        const score = targetScore * 10000 + sourceScore;
+        const score = targetScore * 100000000 + pathScore * 10000 + sourceScore;
         if (score > bestScore) {
             bestScore = score;
             bestMatch = {
                 targetDomain,
+                targetPathPrefix,
                 sourceDomain,
                 authuser,
             };
@@ -279,6 +311,7 @@ function createSuggestedRuleFromUrl(rawUrl, sourceHostname) {
 
     return {
         targetDomain: parsedUrl.hostname.toLowerCase(),
+        targetPathPrefix: normalizeRulePathname(parsedUrl.pathname),
         sourceDomain: sourceHostname ? sourceHostname.toLowerCase() : "",
         authuser,
         createdAt: Date.now(),
@@ -548,7 +581,21 @@ self.addEventListener("unload", () => {
         timeout = null;
     }
 
-    pendingRedirectsByTab.clear();
-    completedRedirectsByTab.clear();
-    suggestedRulesByTab.clear();
+    resetRuntimeState();
 });
+
+if (globalThis.__GACR_ENABLE_TEST_HOOKS__) {
+    globalThis.__GACR_TEST_HOOKS__ = {
+        buildChooserUrl,
+        createSuggestedRuleFromUrl,
+        getRedirectDecision,
+        isCompletedRedirectReturn,
+        isPendingRedirectMatch,
+        isPendingRedirectReturn,
+        normalizeRulePathname,
+        normalizeSettings,
+        resetRuntimeState,
+        setCompletedRedirect,
+        setPendingRedirect,
+    };
+}

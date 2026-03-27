@@ -27,4 +27,15 @@ const DEFAULT_GOOGLE_DOMAINS = [
     "books.google.com",
     "blogger.google.com",
     "takeout.google.com",
-]
+];
+
+globalThis.normalizeRulePathname = globalThis.normalizeRulePathname || ((pathname) => {
+    if (typeof pathname !== "string" || !pathname) return "";
+
+    const normalized = pathname
+        .replace(/\/u\/[^/]+/g, "")
+        .replace(/\/{2,}/g, "/")
+        .replace(/\/$/, "");
+
+    return normalized || "/";
+});
