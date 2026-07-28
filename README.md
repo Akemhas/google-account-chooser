@@ -28,6 +28,24 @@ The extension stores the following in `chrome.storage.sync`:
 - redirect behavior toggles
 - preferred account rules, including user-entered `authuser` values
 
+## Project Structure
+
+```
+google-account-chooser/
+├── manifest.json              # MV3 manifest — permissions, service worker, popup, CSP
+├── background.js              # Service worker: redirect decision engine, content-script registration
+├── config.js                  # Content script (1st): shared defaults on globalThis
+├── redirector.js              # Content script (2nd): direct-nav redirect + click interception
+├── popup.html                 # Settings UI markup + styles
+├── popup.js                   # Settings UI logic
+├── icon.png                   # Extension icon
+├── tests/
+│   └── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API
+├── CLAUDE.md                  # Guidance for Claude Code (claude.ai/code)
+├── README.md
+└── PRIVACY.md                 # Privacy policy
+```
+
 ## Installation
 
 1. Open `chrome://extensions/` or `vivaldi://extensions/`.
@@ -37,4 +55,4 @@ The extension stores the following in `chrome.storage.sync`:
 
 ## Repo Notes
 
-The repository root also contains older packaged builds and legacy files. The active unpacked extension source lives in the `google-account-chooser` directory.
+The repository root is the unpacked extension source — there is no build step. Load the repo folder directly as an unpacked extension. Tests use Node's built-in test runner: `node --test tests/` (Node 18+, no dependencies).
