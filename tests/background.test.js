@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const backgroundPath = path.resolve(__dirname, "..", "background.js");
+const repoRoot = path.resolve(__dirname, "..");
+const backgroundPath = path.join(repoRoot, "background.js");
 const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 
 function createHarness(overrides = {}) {
@@ -21,13 +22,18 @@ function createHarness(overrides = {}) {
     };
 
     const sessionStore = overrides.sessionStore ?? {};
+    const failTabIds = new Set(overrides.failTabIds ?? []);
     const tabs = new Map(Object.entries(overrides.tabs ?? {}).map(([key, value]) => [Number(key), value]));
+    const badgeTextByTab = new Map();
+    const badge = {global: null};
     const listeners = {
         onMessage: [],
         onBeforeNavigate: [],
         onCommitted: [],
+        onCreatedNavigationTarget: [],
         onRemoved: [],
         onChanged: [],
+        onCommand: [],
     };
 
     const context = {
@@ -43,11 +49,45 @@ function createHarness(overrides = {}) {
         setTimeout,
         globalThis: null,
         __GACR_ENABLE_TEST_HOOKS__: true,
+        importScripts(...files) {
+            for (const file of files) {
+                const filePath = path.join(repoRoot, file);
+                vm.runInContext(fs.readFileSync(filePath, "utf8"), context, {filename: filePath});
+            }
+        },
         chrome: {
+            action: {
+                async setBadgeText({tabId, text}) {
+                    if (typeof tabId === "number") {
+                        badgeTextByTab.set(tabId, text);
+                    } else {
+                        badge.global = text;
+                    }
+                },
+                async setBadgeBackgroundColor() {},
+                async setBadgeTextColor() {},
+            },
+            commands: {
+                onCommand: {
+                    addListener(listener) {
+                        listeners.onCommand.push(listener);
+                    },
+                },
+            },
             storage: {
                 sync: {
                     async get() {
                         return structuredClone(settings);
+                    },
+                    async set(items) {
+                        const changes = {};
+                        for (const [key, value] of Object.entries(items)) {
+                            changes[key] = {oldValue: settings[key], newValue: structuredClone(value)};
+                            settings[key] = structuredClone(value);
+                        }
+                        for (const listener of listeners.onChanged) {
+                            listener(changes, "sync");
+                        }
                     },
                 },
                 session: {
@@ -98,9 +138,17 @@ function createHarness(overrides = {}) {
                         listeners.onCommitted.push(listener);
                     },
                 },
+                onCreatedNavigationTarget: {
+                    addListener(listener) {
+                        listeners.onCreatedNavigationTarget.push(listener);
+                    },
+                },
             },
             tabs: {
                 async get(tabId) {
+                    if (failTabIds.has(tabId)) {
+                        throw new Error(`No tab with id: ${tabId}.`);
+                    }
                     return tabs.get(tabId) ?? {id: tabId, url: "about:blank"};
                 },
                 async update(tabId, updateInfo) {
@@ -120,6 +168,8 @@ function createHarness(overrides = {}) {
     vm.runInContext(backgroundSource, context, {filename: backgroundPath});
 
     return {
+        badge,
+        badgeTextByTab,
         hooks: context.__GACR_TEST_HOOKS__,
         listeners,
         sessionStore,
@@ -424,6 +474,175 @@ test("chooser return with only a /u/N/ path yields a suggestion with a trimmed p
     assert.equal(response.suggestedRule.authuser, "2");
     assert.equal(response.suggestedRule.targetPathPrefix, "/document/d/abc123");
     assert.equal(response.suggestedRule.sourceDomain, "slack.com");
+});
+
+test("new-tab navigation from an external site routes through the chooser", async () => {
+    const {listeners, tabs} = createHarness({
+        tabs: {1: {id: 1, url: "https://slack.com/messages"}},
+    });
+
+    await listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(
+        tabs.get(2).url,
+        "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fdrive.google.com%2Fdrive%2Fmy-drive"
+    );
+});
+
+test("new-tab interception respects the external-clicks toggle", async () => {
+    const {listeners, tabs} = createHarness({
+        settings: {interceptExternalClicks: false},
+        tabs: {1: {id: 1, url: "https://slack.com/messages"}},
+    });
+
+    await listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(tabs.has(2), false);
+});
+
+test("new-tab navigation between Google apps is gated by the google-navigation toggle", async () => {
+    const offHarness = createHarness({
+        tabs: {1: {id: 1, url: "https://mail.google.com/mail/"}},
+        settings: {targetSites: ["mail.google.com", "drive.google.com"]},
+    });
+
+    await offHarness.listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(offHarness.tabs.has(2), false);
+
+    const onHarness = createHarness({
+        tabs: {1: {id: 1, url: "https://mail.google.com/mail/"}},
+        settings: {targetSites: ["mail.google.com", "drive.google.com"], interceptGoogleNavigation: true},
+    });
+
+    await onHarness.listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(
+        onHarness.tabs.get(2).url,
+        "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fdrive.google.com%2Fdrive%2Fmy-drive"
+    );
+});
+
+test("new-tab navigation applies preferred rules even with all toggles off", async () => {
+    const {listeners, tabs} = createHarness({
+        settings: {
+            interceptExternalClicks: false,
+            interceptDirectNavigation: false,
+            interceptGoogleNavigation: false,
+            preferredAccountRules: [
+                {targetDomain: "drive.google.com", sourceDomain: "", authuser: "2"},
+            ],
+        },
+        tabs: {1: {id: 1, url: "https://slack.com/messages"}},
+    });
+
+    await listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(tabs.get(2).url, "https://drive.google.com/drive/my-drive?authuser=2");
+});
+
+test("new-tab navigation from an excluded source is left alone", async () => {
+    const {listeners, tabs} = createHarness({
+        settings: {excludedSourceSites: ["slack.com"]},
+        tabs: {1: {id: 1, url: "https://slack.com/messages"}},
+    });
+
+    await listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(tabs.has(2), false);
+});
+
+test("new-tab navigation with an unreadable source tab falls back to direct-navigation", async () => {
+    const {listeners, tabs} = createHarness({
+        settings: {interceptDirectNavigation: false},
+        failTabIds: [1],
+    });
+
+    await listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(tabs.has(2), false);
+});
+
+test("new-tab interception and onBeforeNavigate do not double-redirect", async () => {
+    const {listeners, tabs} = createHarness({
+        tabs: {1: {id: 1, url: "https://slack.com/messages"}},
+    });
+
+    const targetUrl = "https://drive.google.com/drive/my-drive";
+    await listeners.onCreatedNavigationTarget.at(0)({sourceTabId: 1, tabId: 2, url: targetUrl});
+
+    const chooserUrl = tabs.get(2).url;
+    assert.match(chooserUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    await listeners.onBeforeNavigate.at(0)({frameId: 0, tabId: 2, url: targetUrl});
+
+    assert.equal(tabs.get(2).url, chooserUrl);
+});
+
+test("suggestion badge is set on capture, cleared on consume, and OFF when disabled", async () => {
+    const harness = createHarness();
+    const {hooks, listeners, badgeTextByTab, badge} = harness;
+
+    hooks.setPendingRedirect(9, "https://drive.google.com/drive/my-drive", "slack.com", "external-click");
+    await listeners.onCommitted.at(0)({
+        frameId: 0,
+        tabId: 9,
+        url: "https://drive.google.com/drive/u/1/my-drive?authuser=1",
+    });
+
+    assert.equal(badgeTextByTab.get(9), "1");
+
+    const response = await sendMessage(harness, {type: "consumeSuggestedRule", tabId: 9});
+    assert.equal(response.ok, true);
+    assert.equal(badgeTextByTab.get(9), "");
+
+    const suggestion = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(suggestion.suggestedRule, null);
+
+    listeners.onChanged.at(0)({enabled: {oldValue: true, newValue: false}}, "sync");
+    assert.equal(badge.global, "OFF");
+});
+
+test("the toggle-enabled command inverts the stored enabled state", async () => {
+    const {listeners, settings} = createHarness();
+
+    listeners.onCommand.at(0)("toggle-enabled");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(settings.enabled, false);
+
+    listeners.onCommand.at(0)("toggle-enabled");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(settings.enabled, true);
 });
 
 test("suggestions and redirect suppression survive a service-worker restart", async () => {

@@ -1,36 +1,8 @@
+importScripts("config.js");
+
 let timeout = null;
 let isRegistering = false;
 
-const DEFAULT_GOOGLE_DOMAINS = [
-    "docs.google.com",
-    "drive.google.com",
-    "forms.google.com",
-    "console.firebase.google.com",
-    "photos.google.com",
-    "mail.google.com",
-    "calendar.google.com",
-    "contacts.google.com",
-    "maps.google.com",
-    "news.google.com",
-    "keep.google.com",
-    "chat.google.com",
-    "meet.google.com",
-    "classroom.google.com",
-    "analytics.google.com",
-    "ads.google.com",
-    "cloud.google.com",
-    "console.cloud.google.com",
-    "play.google.com",
-    "developers.google.com",
-    "translate.google.com",
-    "scholar.google.com",
-    "sites.google.com",
-    "finance.google.com",
-    "earth.google.com",
-    "books.google.com",
-    "blogger.google.com",
-    "takeout.google.com",
-];
 const REDIRECT_TTL_MS = 5 * 60 * 1000;
 const COMPLETED_REDIRECT_TTL_MS = 15 * 1000;
 const SUGGESTION_TTL_MS = 10 * 60 * 1000;
@@ -93,6 +65,27 @@ function persistSessionState() {
 
 function isSubdomainOrMatch(hostname, domain) {
     return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+function updateSuggestionBadge(tabId) {
+    if (typeof tabId !== "number" || tabId < 0) return;
+
+    const text = suggestedRulesByTab.has(tabId) ? "1" : "";
+    chrome.action.setBadgeText({tabId, text}).catch(() => {});
+
+    if (text) {
+        chrome.action.setBadgeBackgroundColor({tabId, color: "#3555d8"}).catch(() => {});
+        chrome.action.setBadgeTextColor?.({tabId, color: "#FFFFFF"})?.catch(() => {});
+    }
+}
+
+function updateGlobalBadge(enabled) {
+    chrome.action.setBadgeText({text: enabled ? "" : "OFF"}).catch(() => {});
+
+    if (!enabled) {
+        chrome.action.setBadgeBackgroundColor({color: "#6b7280"}).catch(() => {});
+        chrome.action.setBadgeTextColor?.({color: "#FFFFFF"})?.catch(() => {});
+    }
 }
 
 function normalizeSettings(data) {
@@ -269,17 +262,6 @@ function buildChooserUrl(rawUrl) {
 
 function normalizeRuleDomain(domain) {
     return typeof domain === "string" ? domain.trim().toLowerCase() : "";
-}
-
-function normalizeRulePathname(pathname) {
-    if (typeof pathname !== "string" || !pathname) return "";
-
-    const normalized = pathname
-        .replace(/\/u\/[^/]+/g, "")
-        .replace(/\/{2,}/g, "/")
-        .replace(/\/$/, "");
-
-    return normalized || "/";
 }
 
 function getDomainSpecificityScore(hostname, domain) {
@@ -510,6 +492,49 @@ async function maybeInterceptTopLevelNavigation(details) {
     await chrome.tabs.update(details.tabId, {url: redirectUrl});
 }
 
+async function classifyNewTabSource(sourceTabId, settings) {
+    try {
+        const sourceTab = await chrome.tabs.get(sourceTabId);
+        const sourceUrl = parseUrl(sourceTab?.url);
+
+        if (sourceUrl) {
+            if (isTargetUrl(sourceUrl, settings.targetSites)) {
+                return {navigationType: "google-navigation", sourceHostname: sourceUrl.hostname};
+            }
+
+            if (sourceUrl.protocol === "http:" || sourceUrl.protocol === "https:") {
+                return {navigationType: "external-click", sourceHostname: sourceUrl.hostname};
+            }
+        }
+    } catch (error) {
+        console.debug("Failed to inspect source tab for new-tab navigation:", error);
+    }
+
+    return {navigationType: "direct-navigation", sourceHostname: null};
+}
+
+async function handleCreatedNavigationTarget(details) {
+    const parsedUrl = parseUrl(details.url);
+    if (!parsedUrl || isAccountChooserUrl(parsedUrl)) return;
+
+    const settings = await getSettings();
+    if (!settings.enabled) return;
+    if (!isTargetUrl(parsedUrl, settings.targetSites)) return;
+
+    const {navigationType, sourceHostname} = await classifyNewTabSource(details.sourceTabId, settings);
+
+    const {redirectUrl} = await getRedirectDecision({
+        url: details.url,
+        navigationType,
+        sourceHostname,
+        tabId: details.tabId,
+    });
+
+    if (!redirectUrl || redirectUrl === details.url) return;
+
+    await chrome.tabs.update(details.tabId, {url: redirectUrl});
+}
+
 async function registerContentScript() {
     if (isRegistering) return;
 
@@ -544,6 +569,9 @@ async function registerContentScript() {
 }
 
 registerContentScript();
+getSettings()
+    .then((settings) => updateGlobalBadge(settings.enabled))
+    .catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "getRedirectUrl") {
@@ -580,6 +608,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message?.type === "consumeSuggestedRule") {
+        ensureSessionStateLoaded()
+            .then(() => {
+                if (suggestedRulesByTab.delete(message.tabId)) persistSessionState();
+                updateSuggestionBadge(message.tabId);
+                sendResponse({ok: true});
+            })
+            .catch((error) => {
+                console.error("Failed to consume suggested rule:", error);
+                sendResponse({ok: false});
+            });
+
+        return true;
+    }
+
     return false;
 });
 
@@ -596,22 +639,18 @@ async function handleCommittedNavigation(details) {
     cleanupAllExpiredState();
 
     const pendingRedirect = pendingRedirectsByTab.get(details.tabId);
-    if (!pendingRedirect) {
-        return;
+    if (pendingRedirect && isPendingRedirectReturn(details.tabId, details.url)) {
+        const suggestedRule = createSuggestedRuleFromUrl(details.url, pendingRedirect.sourceHostname);
+        if (suggestedRule) {
+            suggestedRulesByTab.set(details.tabId, suggestedRule);
+        }
+
+        setCompletedRedirect(details.tabId, details.url);
+        pendingRedirectsByTab.delete(details.tabId);
+        persistSessionState();
     }
 
-    if (!isPendingRedirectReturn(details.tabId, details.url)) {
-        return;
-    }
-
-    const suggestedRule = createSuggestedRuleFromUrl(details.url, pendingRedirect.sourceHostname);
-    if (suggestedRule) {
-        suggestedRulesByTab.set(details.tabId, suggestedRule);
-    }
-
-    setCompletedRedirect(details.tabId, details.url);
-    pendingRedirectsByTab.delete(details.tabId);
-    persistSessionState();
+    updateSuggestionBadge(details.tabId);
 }
 
 async function handleTabRemoved(tabId) {
@@ -632,6 +671,20 @@ chrome.webNavigation.onCommitted.addListener((details) =>
     })
 );
 
+chrome.webNavigation.onCreatedNavigationTarget.addListener((details) =>
+    handleCreatedNavigationTarget(details).catch((error) => {
+        console.error("Failed to handle created navigation target:", error);
+    })
+);
+
+chrome.commands?.onCommand.addListener((command) => {
+    if (command !== "toggle-enabled") return;
+
+    chrome.storage.sync.get("enabled")
+        .then(({enabled = true}) => chrome.storage.sync.set({enabled: !enabled}))
+        .catch((error) => console.error("Failed to toggle enabled state:", error));
+});
+
 chrome.tabs.onRemoved.addListener((tabId) =>
     handleTabRemoved(tabId).catch((error) => {
         console.error("Failed to clean up removed tab:", error);
@@ -640,6 +693,11 @@ chrome.tabs.onRemoved.addListener((tabId) =>
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync") return;
+
+    if ("enabled" in changes) {
+        updateGlobalBadge(changes.enabled.newValue ?? true);
+    }
+
     if (!CONTENT_SCRIPT_REGISTRATION_KEYS.some((key) => key in changes)) return;
 
     if (timeout !== null) {
@@ -663,6 +721,7 @@ if (globalThis.__GACR_ENABLE_TEST_HOOKS__) {
         getBestEffortNavigationContext,
         getRedirectDecision,
         handleCommittedNavigation,
+        handleCreatedNavigationTarget,
         handleTabRemoved,
         hasExplicitAccount,
         isCompletedRedirectReturn,

@@ -1,4 +1,4 @@
-const DEFAULT_GOOGLE_DOMAINS = [
+globalThis.DEFAULT_GOOGLE_DOMAINS = globalThis.DEFAULT_GOOGLE_DOMAINS || [
     "docs.google.com",
     "drive.google.com",
     "forms.google.com",

@@ -65,16 +65,7 @@ const sanitizeDomainInput = (input) => {
 };
 
 const sanitizeAuthuserInput = (input) => input.trim();
-const normalizeRulePathname = globalThis.normalizeRulePathname || ((pathname) => {
-    if (typeof pathname !== "string" || !pathname) return "";
-
-    const normalized = pathname
-        .replace(/\/u\/[^/]+/g, "")
-        .replace(/\/{2,}/g, "/")
-        .replace(/\/$/, "");
-
-    return normalized || "/";
-});
+const normalizeRulePathname = globalThis.normalizeRulePathname;
 
 const sanitizePathPrefixInput = (input) => {
     const trimmed = input.trim();
@@ -705,6 +696,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             renderPreferredRules();
             renderSavedDocumentRules();
             renderSuggestedRuleHint();
+
+            if (typeof activeTabId === "number") {
+                chrome.runtime.sendMessage({type: "consumeSuggestedRule", tabId: activeTabId}).catch(() => {});
+            }
         } catch (error) {
             preferredAccountRules = preferredAccountRules.filter((rule) => rule.id !== newRule.id);
         }
