@@ -11,6 +11,8 @@ When working with multiple Google accounts, this helps you choose the correct ac
 ## Key Features
 
 - global enable/disable toggle
+- popup shows the current site's status with one-click exclude/un-exclude
+- full options page for managing rules and site lists, with automatic dark mode
 - configurable target Google domains
 - excluded source domains where click interception should not run
 - optional direct-navigation interception for typed/bookmarked URLs
@@ -36,15 +38,18 @@ The extension stores the following in `chrome.storage.sync`:
 
 ```
 google-account-chooser/
-├── manifest.json              # MV3 manifest — permissions, service worker, popup, CSP
-├── background.js              # Service worker: redirect decision engine, content-script registration
-├── config.js                  # Content script (1st): shared defaults on globalThis
-├── redirector.js              # Content script (2nd): direct-nav redirect + click interception
-├── popup.html                 # Settings UI markup + styles
-├── popup.js                   # Settings UI logic
+├── manifest.json              # MV3 manifest — permissions, service worker, popup, options, CSP
+├── background.js              # Service worker: redirect decision engine, badges, content-script registration
+├── config.js                  # Shared defaults + settings normalization (globalThis; imported everywhere)
+├── shared.js                  # Page-side helpers: validators, storage wrappers, toasts, list factories
+├── redirector.js              # Content script: direct-nav redirect + click interception
+├── tokens.css                 # Design tokens — light/dark, spacing, type, buttons, toasts
+├── popup.html / popup.css / popup.js       # Action popup: status, quick actions, toggles
+├── options.html / options.css / options.js # Options page: rules, target sites, excluded sources
 ├── icons/                     # icon.svg source + rendered 16/32/48/128 PNGs
 ├── tests/
-│   └── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API
+│   ├── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API
+│   └── shared.test.js         # pure-helper coverage for config.js + shared.js
 ├── CLAUDE.md                  # Guidance for Claude Code (claude.ai/code)
 ├── README.md
 └── PRIVACY.md                 # Privacy policy

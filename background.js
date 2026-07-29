@@ -6,18 +6,6 @@ let isRegistering = false;
 const REDIRECT_TTL_MS = 5 * 60 * 1000;
 const COMPLETED_REDIRECT_TTL_MS = 15 * 1000;
 const SUGGESTION_TTL_MS = 10 * 60 * 1000;
-const SETTINGS_KEYS = [
-    "enabled",
-    "targetSites",
-    "excludedSourceSites",
-    "excludedSources",
-    "skipIfAccountSpecified",
-    "skipRedirectIfDone",
-    "interceptExternalClicks",
-    "interceptDirectNavigation",
-    "interceptGoogleNavigation",
-    "preferredAccountRules",
-];
 const CONTENT_SCRIPT_REGISTRATION_KEYS = ["enabled", "excludedSourceSites", "excludedSources"];
 const pendingRedirectsByTab = new Map();
 const completedRedirectsByTab = new Map();
@@ -86,19 +74,6 @@ function updateGlobalBadge(enabled) {
         chrome.action.setBadgeBackgroundColor({color: "#6b7280"}).catch(() => {});
         chrome.action.setBadgeTextColor?.({color: "#FFFFFF"})?.catch(() => {});
     }
-}
-
-function normalizeSettings(data) {
-    return {
-        enabled: data.enabled ?? true,
-        targetSites: data.targetSites?.length ? data.targetSites : DEFAULT_GOOGLE_DOMAINS,
-        excludedSourceSites: data.excludedSourceSites ?? data.excludedSources ?? [],
-        skipIfAccountSpecified: data.skipIfAccountSpecified ?? data.skipRedirectIfDone ?? true,
-        interceptExternalClicks: data.interceptExternalClicks ?? true,
-        interceptDirectNavigation: data.interceptDirectNavigation ?? false,
-        interceptGoogleNavigation: data.interceptGoogleNavigation ?? false,
-        preferredAccountRules: Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [],
-    };
 }
 
 async function getSettings() {
@@ -572,6 +547,8 @@ registerContentScript();
 getSettings()
     .then((settings) => updateGlobalBadge(settings.enabled))
     .catch(() => {});
+// The popup no longer stores a tab preference; clear the legacy key.
+chrome.storage.local.remove("popupActiveTab").catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "getRedirectUrl") {

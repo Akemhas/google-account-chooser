@@ -1,0 +1,227 @@
+body {
+    background: var(--bg-subtle);
+}
+
+.options-shell {
+    display: flex;
+    max-width: 880px;
+    min-height: 100vh;
+    margin: 0 auto;
+}
+
+.options-sidebar {
+    flex-shrink: 0;
+    width: 220px;
+    padding: var(--space-5) var(--space-4);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.options-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
+    font-size: var(--text-md);
+    font-weight: 700;
+}
+
+.options-brand img {
+    border-radius: var(--radius-1);
+}
+
+.options-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.nav-tab {
+    min-height: 36px;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.nav-tab:hover {
+    background: var(--bg-subtle);
+    color: var(--text);
+}
+
+.nav-tab[aria-selected="true"] {
+    background: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.options-main {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-5) var(--space-6);
+}
+
+.options-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.options-panel[hidden] {
+    display: none;
+}
+
+.panel-title {
+    font-size: var(--text-xl);
+    font-weight: 700;
+}
+
+.panel-copy {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    max-width: 60ch;
+}
+
+.panel-copy code {
+    font-size: 0.9em;
+    background: var(--bg-inset);
+    padding: 1px 4px;
+    border-radius: var(--radius-1);
+}
+
+.search-field {
+    max-width: 320px;
+}
+
+.preset-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.preset-chip {
+    min-height: 28px;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-round);
+    background: var(--bg-elevated);
+    color: var(--accent);
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--motion-fast), border-color var(--motion-fast);
+}
+
+.preset-chip:hover {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+}
+
+.site-list,
+.rule-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.site-list {
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--bg-elevated);
+    padding: 0 var(--space-3);
+}
+
+.site-list .empty-state,
+.rule-list .empty-state {
+    margin: var(--space-3) 0;
+    border: none;
+}
+
+.item-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.site-list .list-item-inner {
+    padding: var(--space-2) 0;
+}
+
+.rule-list .list-item-inner {
+    padding: var(--space-2) 0;
+}
+
+.rule-text-block {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rule-meta-line {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.rule-side {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+
+.add-row {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.add-row .field {
+    flex: 1;
+}
+
+.builder-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+.field-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.field-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.about-links {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.about-links a {
+    color: var(--accent);
+    font-size: var(--text-sm);
+    text-decoration: none;
+}
+
+.about-links a:hover {
+    text-decoration: underline;
+}

@@ -75,6 +75,9 @@ function createHarness(overrides = {}) {
                 },
             },
             storage: {
+                local: {
+                    async remove() {},
+                },
                 sync: {
                     async get() {
                         return structuredClone(settings);
@@ -629,6 +632,27 @@ test("suggestion badge is set on capture, cleared on consume, and OFF when disab
 
     listeners.onChanged.at(0)({enabled: {oldValue: true, newValue: false}}, "sync");
     assert.equal(badge.global, "OFF");
+});
+
+test("normalizeSettings defaults are unchanged after the config.js move", () => {
+    const {hooks} = createHarness();
+
+    const defaults = hooks.normalizeSettings({});
+
+    assert.equal(defaults.enabled, true);
+    assert.equal(defaults.targetSites.length, 28);
+    assert.equal(defaults.targetSites.includes("docs.google.com"), true);
+    assert.equal(defaults.excludedSourceSites.length, 0);
+    assert.equal(defaults.skipIfAccountSpecified, true);
+    assert.equal(defaults.interceptExternalClicks, true);
+    assert.equal(defaults.interceptDirectNavigation, false);
+    assert.equal(defaults.interceptGoogleNavigation, false);
+    assert.equal(defaults.preferredAccountRules.length, 0);
+
+    const legacy = hooks.normalizeSettings({excludedSources: ["a.com"], skipRedirectIfDone: false});
+    assert.equal(legacy.excludedSourceSites.length, 1);
+    assert.equal(legacy.excludedSourceSites[0], "a.com");
+    assert.equal(legacy.skipIfAccountSpecified, false);
 });
 
 test("the toggle-enabled command inverts the stored enabled state", async () => {

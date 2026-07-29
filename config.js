@@ -39,3 +39,27 @@ globalThis.normalizeRulePathname = globalThis.normalizeRulePathname || ((pathnam
 
     return normalized || "/";
 });
+
+globalThis.SETTINGS_KEYS = globalThis.SETTINGS_KEYS || [
+    "enabled",
+    "targetSites",
+    "excludedSourceSites",
+    "excludedSources",
+    "skipIfAccountSpecified",
+    "skipRedirectIfDone",
+    "interceptExternalClicks",
+    "interceptDirectNavigation",
+    "interceptGoogleNavigation",
+    "preferredAccountRules",
+];
+
+globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
+    enabled: data.enabled ?? true,
+    targetSites: data.targetSites?.length ? data.targetSites : DEFAULT_GOOGLE_DOMAINS,
+    excludedSourceSites: data.excludedSourceSites ?? data.excludedSources ?? [],
+    skipIfAccountSpecified: data.skipIfAccountSpecified ?? data.skipRedirectIfDone ?? true,
+    interceptExternalClicks: data.interceptExternalClicks ?? true,
+    interceptDirectNavigation: data.interceptDirectNavigation ?? false,
+    interceptGoogleNavigation: data.interceptGoogleNavigation ?? false,
+    preferredAccountRules: Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [],
+}));

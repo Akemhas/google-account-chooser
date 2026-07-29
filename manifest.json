@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Google Account Chooser Redirect",
   "short_name": "Account Chooser",
-  "version": "1.7",
+  "version": "2.0",
   "description": "Open Google links with the right account: route through the Account Chooser or apply saved per-service account rules automatically.",
   "minimum_chrome_version": "102",
   "homepage_url": "https://github.com/Akemhas/google-account-chooser",
@@ -31,6 +31,10 @@
       },
       "description": "Enable or disable Google Account Chooser Redirect"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "action": {
     "default_popup": "popup.html",
