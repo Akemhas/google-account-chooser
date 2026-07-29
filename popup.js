@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const interceptExternalClicks = document.getElementById("interceptExternalClicks");
     const interceptDirectNavigation = document.getElementById("interceptDirectNavigation");
     const interceptGoogleNavigation = document.getElementById("interceptGoogleNavigation");
+    const dnrInterception = document.getElementById("dnrInterception");
     const versionLabel = document.getElementById("versionLabel");
     const openOptionsBtn = document.getElementById("openOptionsBtn");
 
@@ -32,6 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             interceptExternalClicks: interceptExternalClicks.checked,
             interceptDirectNavigation: interceptDirectNavigation.checked,
             interceptGoogleNavigation: interceptGoogleNavigation.checked,
+            dnrInterception: dnrInterception.checked,
             preferredAccountRules: settings.preferredAccountRules,
         });
     };
@@ -200,7 +202,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation]
+    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation, dnrInterception]
         .forEach((input) => {
             input.addEventListener("change", async () => {
                 try {
@@ -221,6 +223,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     interceptExternalClicks.checked = settings.interceptExternalClicks;
     interceptDirectNavigation.checked = settings.interceptDirectNavigation;
     interceptGoogleNavigation.checked = settings.interceptGoogleNavigation;
+    dnrInterception.checked = settings.dnrInterception;
     versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
 
     updateEnabledState();

@@ -1,0 +1,21 @@
+body {
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    background: var(--bg-subtle);
+}
+
+.interstitial-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-6);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-align: center;
+}
+
+.interstitial-card img {
+    border-radius: var(--radius-2);
+}

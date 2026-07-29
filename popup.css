@@ -93,6 +93,21 @@ body {
     color: var(--text);
 }
 
+.toggle-row-sub {
+    padding-left: var(--space-4);
+}
+
+.toggle-tag {
+    display: inline-block;
+    margin-left: var(--space-1);
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-round);
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-size: var(--text-xs);
+    font-weight: 600;
+}
+
 .popup-footer {
     display: flex;
     align-items: center;

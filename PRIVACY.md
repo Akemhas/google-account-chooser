@@ -91,6 +91,8 @@ The extension currently requests these permissions:
   Used to inspect and update the current tab during redirect handling and popup-related rule workflows.
 - `webNavigation`
   Used to observe top-level navigations so typed or bookmarked supported Google URLs can be intercepted earlier.
+- `declarativeNetRequestWithHostAccess`
+  Used, when the experimental pre-request option is enabled, to redirect supported navigations inside the browser before any network request is sent. The redirect rules are session-scoped, derived from the user's target-site list, and never leave the browser.
 - `host_permissions` = `*://*/*`
   Required so the extension can run on pages where supported Google service links may appear and route those links according to the user's settings.
 

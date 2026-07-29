@@ -7,6 +7,13 @@ const REDIRECT_TTL_MS = 5 * 60 * 1000;
 const COMPLETED_REDIRECT_TTL_MS = 15 * 1000;
 const SUGGESTION_TTL_MS = 10 * 60 * 1000;
 const CONTENT_SCRIPT_REGISTRATION_KEYS = ["enabled", "excludedSourceSites", "excludedSources"];
+const DNR_SYNC_KEYS = ["enabled", "targetSites", "interceptDirectNavigation", "dnrInterception"];
+const DNR_RULE_ID_BASE = 1000;
+const ALLOW_RULE_ID_BASE = 500000;
+const ALLOW_RULE_TTL_MS = 10 * 1000;
+const NAVIGATION_CONTEXT_TTL_MS = 30 * 1000;
+const lastNavigationContextByTab = new Map();
+const allowRuleTimersByTab = new Map();
 const pendingRedirectsByTab = new Map();
 const completedRedirectsByTab = new Map();
 const suggestedRulesByTab = new Map();
@@ -442,6 +449,15 @@ async function maybeInterceptTopLevelNavigation(details) {
     if (!settings.enabled) return;
     if (!isTargetUrl(parsedUrl, settings.targetSites)) return;
 
+    if (isDnrActive(settings)) {
+        // DNR redirects this request to the interstitial; record the navigation
+        // context (the tab still shows the source page here) for its decision.
+        cleanupNavigationContexts();
+        const context = await getBestEffortNavigationContext(details.tabId, details.url);
+        lastNavigationContextByTab.set(details.tabId, {...context, createdAt: Date.now()});
+        return;
+    }
+
     await ensureSessionStateLoaded();
     if (cleanupCompletedRedirects()) persistSessionState();
 
@@ -467,6 +483,175 @@ async function maybeInterceptTopLevelNavigation(details) {
     if (!redirectUrl || redirectUrl === details.url) return;
 
     await chrome.tabs.update(details.tabId, {url: redirectUrl});
+}
+
+function isDnrAvailable() {
+    return Boolean(chrome.declarativeNetRequest?.updateSessionRules);
+}
+
+function isDnrActive(settings) {
+    return settings.enabled && settings.interceptDirectNavigation && settings.dnrInterception && isDnrAvailable();
+}
+
+function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildDnrRedirectRule(domain, index) {
+    return {
+        id: DNR_RULE_ID_BASE + index,
+        priority: 1,
+        action: {
+            type: "redirect",
+            redirect: {
+                // \0 is the full regex match; the pattern must consume the entire
+                // URL (trailing .*) or the forwarded target truncates.
+                regexSubstitution: `chrome-extension://${chrome.runtime.id}/interstitial.html?target=\\0`,
+            },
+        },
+        condition: {
+            regexFilter: `^https?://([^/]+\\.)?${escapeRegex(domain)}/.*`,
+            resourceTypes: ["main_frame"],
+            excludedInitiatorDomains: ["accounts.google.com"],
+        },
+    };
+}
+
+let dnrSyncQueue = Promise.resolve();
+
+// Serialized: concurrent calls (init + storage.onChanged) would otherwise both
+// read the same rule set and register duplicates.
+function syncDnrRules() {
+    dnrSyncQueue = dnrSyncQueue.then(() => performDnrRuleSync());
+    return dnrSyncQueue;
+}
+
+async function performDnrRuleSync() {
+    if (!isDnrAvailable()) return;
+
+    try {
+        const settings = await getSettings();
+        const existingRules = await chrome.declarativeNetRequest.getSessionRules();
+        const removeRuleIds = existingRules
+            .map((rule) => rule.id)
+            .filter((id) => id >= DNR_RULE_ID_BASE && id < ALLOW_RULE_ID_BASE);
+
+        if (!isDnrActive(settings)) {
+            if (removeRuleIds.length) {
+                await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds});
+            }
+            return;
+        }
+
+        const addRules = [];
+        for (const [index, domain] of settings.targetSites.entries()) {
+            if (isSubdomainOrMatch(domain, "accounts.google.com") || isSubdomainOrMatch("accounts.google.com", domain)) {
+                continue;
+            }
+
+            const rule = buildDnrRedirectRule(domain, index);
+            const {isSupported} = await chrome.declarativeNetRequest.isRegexSupported({
+                regex: rule.condition.regexFilter,
+            });
+            if (!isSupported) {
+                console.warn("Skipping unsupported DNR pattern for domain:", domain);
+                continue;
+            }
+
+            addRules.push(rule);
+        }
+
+        await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds, addRules});
+    } catch (error) {
+        console.error("Failed to sync DNR rules:", error);
+    }
+}
+
+async function addTabAllowRule(tabId) {
+    if (!isDnrAvailable() || typeof tabId !== "number" || tabId < 0) return;
+
+    await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [ALLOW_RULE_ID_BASE + tabId],
+        addRules: [{
+            id: ALLOW_RULE_ID_BASE + tabId,
+            priority: 2,
+            action: {type: "allow"},
+            condition: {tabIds: [tabId], resourceTypes: ["main_frame"]},
+        }],
+    });
+
+    clearTimeout(allowRuleTimersByTab.get(tabId));
+    allowRuleTimersByTab.set(tabId, setTimeout(() => {
+        removeTabAllowRule(tabId).catch(() => {});
+    }, ALLOW_RULE_TTL_MS));
+}
+
+async function removeTabAllowRule(tabId) {
+    if (!isDnrAvailable() || typeof tabId !== "number" || tabId < 0) return;
+
+    const timer = allowRuleTimersByTab.get(tabId);
+    if (timer !== undefined) {
+        clearTimeout(timer);
+        allowRuleTimersByTab.delete(tabId);
+    }
+
+    await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [ALLOW_RULE_ID_BASE + tabId],
+    });
+}
+
+async function sweepOrphanAllowRules() {
+    if (!isDnrAvailable()) return;
+
+    try {
+        const rules = await chrome.declarativeNetRequest.getSessionRules();
+        const removeRuleIds = rules.map((rule) => rule.id).filter((id) => id >= ALLOW_RULE_ID_BASE);
+        if (removeRuleIds.length) {
+            await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds});
+        }
+    } catch (error) {
+        console.error("Failed to sweep orphaned allow rules:", error);
+    }
+}
+
+function cleanupNavigationContexts() {
+    const now = Date.now();
+
+    for (const [tabId, context] of lastNavigationContextByTab.entries()) {
+        if (now - context.createdAt > NAVIGATION_CONTEXT_TTL_MS) {
+            lastNavigationContextByTab.delete(tabId);
+        }
+    }
+}
+
+async function handleInterstitialDecision(url, tabId) {
+    await ensureSessionStateLoaded();
+    cleanupNavigationContexts();
+
+    const context = lastNavigationContextByTab.get(tabId) ?? {
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+    };
+    lastNavigationContextByTab.delete(tabId);
+
+    const {redirectUrl} = await getRedirectDecision({
+        url,
+        navigationType: context.navigationType,
+        sourceHostname: context.sourceHostname,
+        tabId,
+    });
+
+    const finalUrl = redirectUrl ?? url;
+
+    const parsedFinal = parseUrl(finalUrl);
+    if (parsedFinal) {
+        const settings = await getSettings();
+        if (isDnrActive(settings) && isTargetUrl(parsedFinal, settings.targetSites)) {
+            await addTabAllowRule(tabId);
+        }
+    }
+
+    return {finalUrl};
 }
 
 async function classifyNewTabSource(sourceTabId, settings) {
@@ -546,6 +731,8 @@ async function registerContentScript() {
 }
 
 registerContentScript();
+syncDnrRules();
+sweepOrphanAllowRules();
 getSettings()
     .then((settings) => updateGlobalBadge(settings.enabled))
     .catch(() => {});
@@ -587,6 +774,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message?.type === "interstitialDecision") {
+        const tabId = sender.tab?.id ?? -1;
+
+        handleInterstitialDecision(message.url, tabId)
+            .then(sendResponse)
+            .catch((error) => {
+                console.error("Failed to decide interstitial navigation:", error);
+                // Fail open, but add the allow rule first so the passthrough can't loop.
+                addTabAllowRule(tabId)
+                    .catch(() => {})
+                    .then(() => sendResponse({finalUrl: message.url}));
+            });
+
+        return true;
+    }
+
     if (message?.type === "consumeSuggestedRule") {
         ensureSessionStateLoaded()
             .then(() => {
@@ -605,14 +808,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
 });
 
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+chrome.webNavigation.onBeforeNavigate.addListener((details) =>
     maybeInterceptTopLevelNavigation(details).catch((error) => {
         console.error("Failed to intercept top-level navigation:", error);
-    });
-});
+    })
+);
 
 async function handleCommittedNavigation(details) {
     if (details.frameId !== 0 || details.tabId < 0) return;
+
+    // A real page committed — retire the tab's DNR allow rule and stale context.
+    // Skip our own interstitial's commit: its allow rule is added after this event.
+    if (!details.url.startsWith(chrome.runtime.getURL(""))) {
+        lastNavigationContextByTab.delete(details.tabId);
+        removeTabAllowRule(details.tabId).catch(() => {});
+    }
 
     await ensureSessionStateLoaded();
     cleanupAllExpiredState();
@@ -633,6 +843,9 @@ async function handleCommittedNavigation(details) {
 }
 
 async function handleTabRemoved(tabId) {
+    lastNavigationContextByTab.delete(tabId);
+    removeTabAllowRule(tabId).catch(() => {});
+
     await ensureSessionStateLoaded();
 
     const removed = [
@@ -677,6 +890,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         updateGlobalBadge(changes.enabled.newValue ?? true);
     }
 
+    if (DNR_SYNC_KEYS.some((key) => key in changes)) {
+        syncDnrRules();
+    }
+
     if (!CONTENT_SCRIPT_REGISTRATION_KEYS.some((key) => key in changes)) return;
 
     if (timeout !== null) {
@@ -701,8 +918,11 @@ if (globalThis.__GACR_ENABLE_TEST_HOOKS__) {
         getRedirectDecision,
         handleCommittedNavigation,
         handleCreatedNavigationTarget,
+        handleInterstitialDecision,
         handleTabRemoved,
         hasExplicitAccount,
+        sweepOrphanAllowRules,
+        syncDnrRules,
         isCompletedRedirectReturn,
         isPendingRedirectMatch,
         isPendingRedirectReturn,

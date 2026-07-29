@@ -16,6 +16,7 @@ When working with multiple Google accounts, this helps you choose the correct ac
 - configurable target Google domains
 - excluded source domains where click interception should not run
 - optional direct-navigation interception for typed/bookmarked URLs
+- experimental pre-request mode: typed URLs redirect inside the browser before the first request is sent (declarativeNetRequest)
 - optional Google-to-Google interception
 - preferred-account rules that add `authuser` directly instead of showing chooser whenever they match
 - rules can be edited in place, toggled on/off individually, and given account labels (e.g. "Work" for `authuser=1`)
@@ -48,6 +49,7 @@ google-account-chooser/
 ├── tokens.css                 # Design tokens — light/dark, spacing, type, buttons, toasts
 ├── popup.html / popup.css / popup.js       # Action popup: status, quick actions, toggles
 ├── options.html / options.css / options.js # Options page: rules, target sites, excluded sources
+├── interstitial.html / .css / .js          # DNR pre-request redirect page (experimental)
 ├── icons/                     # icon.svg source + rendered 16/32/48/128 PNGs
 ├── tests/
 │   ├── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API

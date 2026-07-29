@@ -22,6 +22,7 @@ function createHarness(overrides = {}) {
     };
 
     const sessionStore = overrides.sessionStore ?? {};
+    const dnrSessionRules = overrides.dnrSessionRules ?? [];
     const failTabIds = new Set(overrides.failTabIds ?? []);
     const tabs = new Map(Object.entries(overrides.tabs ?? {}).map(([key, value]) => [Number(key), value]));
     const badgeTextByTab = new Map();
@@ -74,6 +75,21 @@ function createHarness(overrides = {}) {
                     },
                 },
             },
+            declarativeNetRequest: {
+                async getSessionRules() {
+                    return structuredClone(dnrSessionRules);
+                },
+                async updateSessionRules({removeRuleIds = [], addRules = []} = {}) {
+                    for (const id of removeRuleIds) {
+                        const index = dnrSessionRules.findIndex((rule) => rule.id === id);
+                        if (index !== -1) dnrSessionRules.splice(index, 1);
+                    }
+                    dnrSessionRules.push(...structuredClone(addRules));
+                },
+                async isRegexSupported() {
+                    return {isSupported: true};
+                },
+            },
             storage: {
                 local: {
                     async remove() {},
@@ -124,6 +140,10 @@ function createHarness(overrides = {}) {
                 async registerContentScripts() {},
             },
             runtime: {
+                id: "test-extension-id",
+                getURL(resourcePath = "") {
+                    return `chrome-extension://test-extension-id/${resourcePath}`;
+                },
                 onMessage: {
                     addListener(listener) {
                         listeners.onMessage.push(listener);
@@ -173,6 +193,7 @@ function createHarness(overrides = {}) {
     return {
         badge,
         badgeTextByTab,
+        dnrSessionRules,
         hooks: context.__GACR_TEST_HOOKS__,
         listeners,
         sessionStore,
@@ -181,10 +202,10 @@ function createHarness(overrides = {}) {
     };
 }
 
-function sendMessage(harness, message) {
+function sendMessage(harness, message, sender = {}) {
     const onMessage = harness.listeners.onMessage.at(0);
     return new Promise((resolve) => {
-        const isAsync = onMessage(message, {}, resolve);
+        const isAsync = onMessage(message, sender, resolve);
         if (!isAsync) resolve(undefined);
     });
 }
@@ -709,6 +730,156 @@ test("the toggle-enabled command inverts the stored enabled state", async () => 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.equal(settings.enabled, true);
+});
+
+test("DNR rules are not registered while the feature is off (default)", async () => {
+    const {hooks, dnrSessionRules} = createHarness({
+        settings: {interceptDirectNavigation: true},
+    });
+
+    await hooks.syncDnrRules();
+
+    assert.equal(dnrSessionRules.length, 0);
+});
+
+test("DNR rules cover each target domain and never accounts.google.com", async () => {
+    const {hooks, dnrSessionRules} = createHarness({
+        settings: {
+            targetSites: ["drive.google.com", "accounts.google.com", "docs.google.com"],
+            interceptDirectNavigation: true,
+            dnrInterception: true,
+        },
+    });
+
+    await hooks.syncDnrRules();
+
+    assert.equal(dnrSessionRules.length, 2);
+    for (const rule of dnrSessionRules) {
+        assert.match(rule.condition.regexFilter, /^\^https\?:\/\//);
+        assert.match(rule.condition.regexFilter, /\/\.\*$/);
+        assert.equal(rule.condition.regexFilter.includes("accounts"), false);
+        assert.equal(rule.condition.excludedInitiatorDomains[0], "accounts.google.com");
+        assert.equal(
+            rule.action.redirect.regexSubstitution,
+            "chrome-extension://test-extension-id/interstitial.html?target=\\0"
+        );
+    }
+});
+
+test("turning the DNR setting off removes registered rules", async () => {
+    const harness = createHarness({
+        settings: {interceptDirectNavigation: true, dnrInterception: true},
+    });
+
+    await harness.hooks.syncDnrRules();
+    assert.equal(harness.dnrSessionRules.length, 2);
+
+    harness.settings.dnrInterception = false;
+    await harness.hooks.syncDnrRules();
+    assert.equal(harness.dnrSessionRules.length, 0);
+});
+
+test("interstitial decisions produce a chooser URL without an allow rule", async () => {
+    const harness = createHarness({
+        settings: {interceptDirectNavigation: true, dnrInterception: true},
+    });
+
+    const response = await sendMessage(
+        harness,
+        {type: "interstitialDecision", url: "https://drive.google.com/drive/my-drive"},
+        {tab: {id: 5}}
+    );
+
+    assert.equal(
+        response.finalUrl,
+        "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fdrive.google.com%2Fdrive%2Fmy-drive"
+    );
+    assert.equal(harness.dnrSessionRules.some((rule) => rule.id >= 500000), false);
+});
+
+test("interstitial passthrough adds a tab allow rule that commit removes", async () => {
+    const harness = createHarness({
+        settings: {interceptDirectNavigation: true, dnrInterception: true},
+    });
+    await harness.hooks.syncDnrRules();
+
+    const targetUrl = "https://drive.google.com/drive/my-drive?authuser=1";
+    const response = await sendMessage(
+        harness,
+        {type: "interstitialDecision", url: targetUrl},
+        {tab: {id: 5}}
+    );
+
+    assert.equal(response.finalUrl, targetUrl);
+    const allowRule = harness.dnrSessionRules.find((rule) => rule.id === 500005);
+    assert.equal(allowRule.action.type, "allow");
+    assert.equal(allowRule.condition.tabIds[0], 5);
+
+    await harness.listeners.onCommitted.at(0)({frameId: 0, tabId: 5, url: targetUrl});
+    assert.equal(harness.dnrSessionRules.some((rule) => rule.id === 500005), false);
+});
+
+test("interstitial decisions consume the recorded navigation context once", async () => {
+    const harness = createHarness({
+        settings: {
+            targetSites: ["mail.google.com", "drive.google.com"],
+            interceptDirectNavigation: true,
+            interceptGoogleNavigation: false,
+            dnrInterception: true,
+        },
+        tabs: {3: {id: 3, url: "https://mail.google.com/mail/"}},
+    });
+
+    const targetUrl = "https://drive.google.com/drive/my-drive";
+    await harness.listeners.onBeforeNavigate.at(0)({frameId: 0, tabId: 3, url: targetUrl});
+
+    // The recorded google-navigation context is gated off, so the first
+    // decision passes through instead of using direct-navigation.
+    const first = await sendMessage(
+        harness,
+        {type: "interstitialDecision", url: targetUrl},
+        {tab: {id: 3}}
+    );
+    assert.equal(first.finalUrl, targetUrl);
+
+    await harness.listeners.onCommitted.at(0)({frameId: 0, tabId: 3, url: targetUrl});
+
+    // Context was consumed, so a second decision falls back to
+    // direct-navigation and routes through the chooser.
+    const second = await sendMessage(
+        harness,
+        {type: "interstitialDecision", url: targetUrl},
+        {tab: {id: 3}}
+    );
+    assert.match(second.finalUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+});
+
+test("onBeforeNavigate records context instead of redirecting while DNR is active", async () => {
+    const harness = createHarness({
+        settings: {interceptDirectNavigation: true, dnrInterception: true},
+    });
+
+    await harness.listeners.onBeforeNavigate.at(0)({
+        frameId: 0,
+        tabId: 6,
+        url: "https://drive.google.com/drive/my-drive",
+    });
+
+    assert.equal(harness.tabs.has(6), false);
+});
+
+test("orphaned allow rules are swept, foreign rules are left alone", async () => {
+    const harness = createHarness({
+        dnrSessionRules: [
+            {id: 42, action: {type: "block"}, condition: {}},
+            {id: 500007, action: {type: "allow"}, condition: {tabIds: [7]}},
+        ],
+    });
+
+    await harness.hooks.sweepOrphanAllowRules();
+
+    assert.equal(harness.dnrSessionRules.some((rule) => rule.id === 500007), false);
+    assert.equal(harness.dnrSessionRules.some((rule) => rule.id === 42), true);
 });
 
 test("suggestions and redirect suppression survive a service-worker restart", async () => {
