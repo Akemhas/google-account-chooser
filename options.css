@@ -209,6 +209,57 @@ body {
     color: var(--text-muted);
 }
 
+.quota-warning {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-2);
+    color: var(--danger);
+    font-size: var(--text-xs);
+}
+
+.rule-side .switch {
+    width: 32px;
+    height: 20px;
+}
+
+.rule-side .switch-track::after {
+    width: 14px;
+    height: 14px;
+}
+
+.rule-side .switch input:checked + .switch-track::after {
+    transform: translateX(12px);
+}
+
+.list-item.is-rule-disabled .rule-text-block,
+.list-item.is-rule-disabled .badge {
+    opacity: 0.5;
+}
+
+.import-mode {
+    border: none;
+    margin: var(--space-3) 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.import-mode label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text);
+}
+
+.import-mode input {
+    accent-color: var(--accent);
+}
+
+.backup-actions {
+    justify-content: flex-start;
+}
+
 .about-links {
     display: flex;
     flex-direction: column;

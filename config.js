@@ -51,6 +51,7 @@ globalThis.SETTINGS_KEYS = globalThis.SETTINGS_KEYS || [
     "interceptDirectNavigation",
     "interceptGoogleNavigation",
     "preferredAccountRules",
+    "accountLabels",
 ];
 
 globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
@@ -62,4 +63,7 @@ globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
     interceptDirectNavigation: data.interceptDirectNavigation ?? false,
     interceptGoogleNavigation: data.interceptGoogleNavigation ?? false,
     preferredAccountRules: Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [],
+    accountLabels: data.accountLabels && typeof data.accountLabels === "object" && !Array.isArray(data.accountLabels)
+        ? data.accountLabels
+        : {},
 }));

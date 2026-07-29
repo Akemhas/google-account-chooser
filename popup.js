@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const sourceLabel = suggestedRuleCandidate.sourceDomain
             ? ` from ${suggestedRuleCandidate.sourceDomain}`
             : "";
-        const summary = `${suggestedRuleCandidate.targetDomain}${suggestedRuleCandidate.targetPathPrefix ?? ""}${sourceLabel} with authuser=${suggestedRuleCandidate.authuser}`;
+        const summary = `${suggestedRuleCandidate.targetDomain}${suggestedRuleCandidate.targetPathPrefix ?? ""}${sourceLabel} with ${formatAuthuserLabel(suggestedRuleCandidate.authuser, settings.accountLabels)}`;
 
         suggestedRuleHint.textContent = alreadySaved ? `Already saved: ${summary}` : `Suggested: ${summary}`;
         useSuggestedRuleBtn.disabled = alreadySaved;

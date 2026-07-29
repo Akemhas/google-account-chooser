@@ -44,6 +44,7 @@ Settings are stored in `chrome.storage.sync` so preferences can persist across t
 - preferred account rules
 - document-specific remembered rules
 - user-entered `authuser` values, including numeric account indexes or email-based account hints
+- user-entered account labels (friendly names shown next to `authuser` values)
 
 This data is retained until the user edits or removes it, or uninstalls the extension. Chrome may sync it across the user's signed-in browsers as part of normal profile sync.
 

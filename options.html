@@ -28,6 +28,10 @@
 
             <input type="search" class="field search-field" id="ruleSearch" placeholder="Search rules..." aria-label="Search rules">
 
+            <div class="quota-warning" id="quotaWarning" role="alert" hidden>
+                Rule storage is close to Chrome's sync limit. Export a backup from the About section, then remove unused rules.
+            </div>
+
             <section class="card">
                 <div class="card-title">Saved Documents</div>
                 <div class="card-copy">Document-specific rules, usually saved from chooser suggestions.</div>
@@ -41,7 +45,7 @@
             </section>
 
             <section class="card">
-                <div class="card-title">Create Rule</div>
+                <div class="card-title" id="ruleBuilderTitle">Create Rule</div>
                 <div class="preset-grid" id="rulePresetGrid"></div>
                 <div class="builder-grid">
                     <label class="field-stack">
@@ -60,10 +64,21 @@
                         <span class="field-label">Source site, optional</span>
                         <input type="text" class="field" id="preferredSourceInput" placeholder="slack.com">
                     </label>
+                    <label class="field-stack">
+                        <span class="field-label">Account label, optional</span>
+                        <input type="text" class="field" id="preferredLabelInput" placeholder="e.g. Work" maxlength="32">
+                    </label>
                 </div>
                 <div class="card-actions">
+                    <button class="btn btn-ghost" id="cancelEditRuleBtn" hidden>Cancel</button>
                     <button class="btn btn-primary" id="addPreferredRuleBtn">Save Rule</button>
                 </div>
+            </section>
+
+            <section class="card">
+                <div class="card-title">Account Labels</div>
+                <div class="card-copy">Names shown next to <code>authuser</code> values, so "1" can read as "Work".</div>
+                <div class="rule-list" id="accountLabelsList" role="list" aria-label="Account labels"></div>
             </section>
         </section>
 
@@ -101,6 +116,21 @@
                     <a href="https://github.com/Akemhas/google-account-chooser" target="_blank" rel="noreferrer">GitHub repository</a>
                     <a href="https://github.com/Akemhas/google-account-chooser/blob/master/PRIVACY.md" target="_blank" rel="noreferrer">Privacy policy</a>
                     <a href="chrome://extensions/shortcuts" id="shortcutsLink">Keyboard shortcuts</a>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-title">Backup</div>
+                <p class="card-copy">Export all settings and rules to a JSON file, or restore them from one.</p>
+                <fieldset class="import-mode">
+                    <legend class="field-label">When importing</legend>
+                    <label><input type="radio" name="importMode" value="merge" checked> Merge with current settings</label>
+                    <label><input type="radio" name="importMode" value="replace"> Replace current settings</label>
+                </fieldset>
+                <div class="card-actions backup-actions">
+                    <button class="btn btn-secondary" id="exportBtn">Export settings</button>
+                    <button class="btn btn-secondary" id="importBtn">Import settings…</button>
+                    <input type="file" id="importFileInput" accept="application/json,.json" hidden>
                 </div>
             </section>
         </section>

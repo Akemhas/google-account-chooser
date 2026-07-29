@@ -5,14 +5,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
 
     const ruleSearch = document.getElementById("ruleSearch");
+    const quotaWarning = document.getElementById("quotaWarning");
     const savedDocumentRulesList = document.getElementById("savedDocumentRulesList");
     const preferredRulesList = document.getElementById("preferredRulesList");
+    const accountLabelsList = document.getElementById("accountLabelsList");
     const rulePresetGrid = document.getElementById("rulePresetGrid");
+    const ruleBuilderTitle = document.getElementById("ruleBuilderTitle");
     const preferredTargetInput = document.getElementById("preferredTargetInput");
     const preferredTargetPathInput = document.getElementById("preferredTargetPathInput");
     const preferredAuthuserInput = document.getElementById("preferredAuthuserInput");
     const preferredSourceInput = document.getElementById("preferredSourceInput");
+    const preferredLabelInput = document.getElementById("preferredLabelInput");
     const addPreferredRuleBtn = document.getElementById("addPreferredRuleBtn");
+    const cancelEditRuleBtn = document.getElementById("cancelEditRuleBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const importBtn = document.getElementById("importBtn");
+    const importFileInput = document.getElementById("importFileInput");
 
     const targetSearch = document.getElementById("targetSearch");
     const targetPresetGrid = document.getElementById("targetPresetGrid");
@@ -34,11 +42,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     settings = loaded;
     if (loadError) showToast("Failed to load settings", {variant: "error"});
 
+    let editingRuleId = null;
+
     const persistSettings = async () => {
         await saveSettings({
             targetSites: settings.targetSites,
             excludedSourceSites: settings.excludedSourceSites,
             preferredAccountRules: settings.preferredAccountRules,
+            accountLabels: settings.accountLabels,
         });
     };
 
@@ -78,8 +89,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const createRuleItem = (rule) => {
         const container = document.createElement("div");
         container.className = "list-item";
+        container.classList.toggle("is-rule-disabled", rule.enabled === false);
         container.setAttribute("role", "listitem");
-        container.dataset.search = `${rule.targetDomain}${rule.targetPathPrefix ?? ""} ${rule.sourceDomain ?? ""} ${rule.authuser}`.toLowerCase();
+        container.dataset.search = `${rule.targetDomain}${rule.targetPathPrefix ?? ""} ${rule.sourceDomain ?? ""} ${rule.authuser} ${settings.accountLabels[rule.authuser] ?? ""}`.toLowerCase();
 
         const inner = document.createElement("div");
         inner.className = "list-item-inner";
@@ -99,7 +111,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const badge = document.createElement("span");
         badge.className = "badge";
-        badge.textContent = `authuser=${rule.authuser}`;
+        badge.textContent = formatAuthuserLabel(rule.authuser, settings.accountLabels);
+
+        const toggle = document.createElement("label");
+        toggle.className = "switch";
+        toggle.setAttribute("aria-label", `Enable rule for ${rule.targetDomain}${rule.targetPathPrefix ?? ""}`);
+        const toggleInput = document.createElement("input");
+        toggleInput.type = "checkbox";
+        toggleInput.checked = rule.enabled !== false;
+        toggleInput.dataset.ruleId = rule.id;
+        toggleInput.className = "rule-toggle";
+        const toggleTrack = document.createElement("span");
+        toggleTrack.className = "switch-track";
+        toggle.appendChild(toggleInput);
+        toggle.appendChild(toggleTrack);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "btn btn-ghost edit-btn";
+        editBtn.textContent = "Edit";
+        editBtn.setAttribute("aria-label", `Edit rule for ${rule.targetDomain}${rule.targetPathPrefix ?? ""}`);
+        editBtn.dataset.ruleId = rule.id;
 
         const removeBtn = document.createElement("button");
         removeBtn.className = "btn btn-danger-ghost remove-btn";
@@ -110,6 +141,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const side = document.createElement("div");
         side.className = "rule-side";
         side.appendChild(badge);
+        side.appendChild(toggle);
+        side.appendChild(editBtn);
         side.appendChild(removeBtn);
 
         textBlock.appendChild(name);
@@ -119,6 +152,52 @@ document.addEventListener("DOMContentLoaded", async () => {
         container.appendChild(inner);
 
         return container;
+    };
+
+    const renderAccountLabels = () => {
+        accountLabelsList.innerHTML = "";
+
+        const entries = Object.entries(settings.accountLabels);
+        if (!entries.length) {
+            accountLabelsList.appendChild(createEmptyState("No labels yet. Add one from the rule builder's label field."));
+            return;
+        }
+
+        for (const [authuser, label] of entries.sort(([a], [b]) => a.localeCompare(b))) {
+            const container = document.createElement("div");
+            container.className = "list-item";
+            container.setAttribute("role", "listitem");
+
+            const inner = document.createElement("div");
+            inner.className = "list-item-inner";
+
+            const name = document.createElement("span");
+            name.className = "item-name";
+            name.textContent = `authuser=${authuser} · ${label}`;
+
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "btn btn-danger-ghost";
+            removeBtn.textContent = "Remove";
+            removeBtn.setAttribute("aria-label", `Remove label for authuser ${authuser}`);
+            removeBtn.addEventListener("click", async () => {
+                const previous = {...settings.accountLabels};
+                delete settings.accountLabels[authuser];
+
+                try {
+                    await persistSettings();
+                    renderRules();
+                    showToast("Label removed");
+                } catch (error) {
+                    settings.accountLabels = previous;
+                    showToast(error.message, {variant: "error"});
+                }
+            });
+
+            inner.appendChild(name);
+            inner.appendChild(removeBtn);
+            container.appendChild(inner);
+            accountLabelsList.appendChild(container);
+        }
     };
 
     const renderRules = () => {
@@ -143,6 +222,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             preferredRulesList.appendChild(createEmptyState("No service-wide rules saved yet."));
         }
 
+        quotaWarning.hidden = JSON.stringify(settings.preferredAccountRules).length <= RULES_QUOTA_WARNING_BYTES;
+        renderAccountLabels();
         applyRuleSearch();
     };
 
@@ -171,22 +252,85 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     };
 
+    const clearBuilder = () => {
+        preferredTargetInput.value = "";
+        preferredTargetPathInput.value = "";
+        preferredSourceInput.value = "";
+        preferredAuthuserInput.value = "";
+        preferredLabelInput.value = "";
+    };
+
+    const exitEditMode = () => {
+        editingRuleId = null;
+        ruleBuilderTitle.textContent = "Create Rule";
+        addPreferredRuleBtn.textContent = "Save Rule";
+        cancelEditRuleBtn.hidden = true;
+        clearBuilder();
+    };
+
+    const enterEditMode = (rule) => {
+        editingRuleId = rule.id;
+        ruleBuilderTitle.textContent = "Edit Rule";
+        addPreferredRuleBtn.textContent = "Update Rule";
+        cancelEditRuleBtn.hidden = false;
+        preferredTargetInput.value = rule.targetDomain;
+        preferredTargetPathInput.value = rule.targetPathPrefix ?? "";
+        preferredSourceInput.value = rule.sourceDomain ?? "";
+        preferredAuthuserInput.value = rule.authuser;
+        preferredLabelInput.value = settings.accountLabels[rule.authuser] ?? "";
+        preferredTargetInput.focus();
+    };
+
+    const toggleRuleEnabled = async (ruleId, isEnabled) => {
+        const previous = settings.preferredAccountRules;
+        settings.preferredAccountRules = previous.map((rule) => {
+            if (rule.id !== ruleId) return rule;
+            const updated = {...rule};
+            if (isEnabled) delete updated.enabled;
+            else updated.enabled = false;
+            return updated;
+        });
+
+        try {
+            await persistSettings();
+            renderRules();
+        } catch (error) {
+            settings.preferredAccountRules = previous;
+            renderRules();
+            showToast(error.message, {variant: "error"});
+        }
+    };
+
     for (const list of [savedDocumentRulesList, preferredRulesList]) {
         list.addEventListener("click", (e) => {
             const ruleId = e.target.dataset?.ruleId;
-            if (ruleId && e.target.classList.contains("remove-btn")) {
+            if (!ruleId) return;
+
+            if (e.target.classList.contains("remove-btn")) {
+                if (ruleId === editingRuleId) exitEditMode();
                 removeRule(ruleId);
+            } else if (e.target.classList.contains("edit-btn")) {
+                const rule = settings.preferredAccountRules.find((r) => r.id === ruleId);
+                if (rule) enterEditMode(rule);
+            }
+        });
+
+        list.addEventListener("change", (e) => {
+            const ruleId = e.target.dataset?.ruleId;
+            if (ruleId && e.target.classList.contains("rule-toggle")) {
+                toggleRuleEnabled(ruleId, e.target.checked);
             }
         });
     }
 
-    const addPreferredRule = async () => {
+    const saveRuleFromBuilder = async () => {
         const targetDomain = sanitizeDomainInput(preferredTargetInput.value);
         const targetPathPrefix = sanitizePathPrefixInput(preferredTargetPathInput.value);
         const sourceDomain = preferredSourceInput.value.trim()
             ? sanitizeDomainInput(preferredSourceInput.value)
             : "";
         const authuser = sanitizeAuthuserInput(preferredAuthuserInput.value);
+        const label = preferredLabelInput.value.trim().slice(0, 32);
 
         if (!targetDomain || !isValidDomain(targetDomain)) {
             showToast("Rules need a valid target domain", {variant: "error"});
@@ -203,32 +347,51 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        const newRule = {id: createRuleId(), targetDomain, targetPathPrefix, sourceDomain, authuser};
+        const existing = editingRuleId
+            ? settings.preferredAccountRules.find((rule) => rule.id === editingRuleId)
+            : null;
+        const candidate = {
+            ...(existing ?? {}),
+            id: existing?.id ?? createRuleId(),
+            targetDomain,
+            targetPathPrefix,
+            sourceDomain,
+            authuser,
+        };
 
-        if (settings.preferredAccountRules.some((rule) => rulesAreEquivalent(rule, newRule))) {
+        const duplicate = settings.preferredAccountRules.some((rule) =>
+            rule.id !== candidate.id && rulesAreEquivalent(rule, candidate));
+        if (duplicate) {
             showToast("That rule already exists", {variant: "error"});
             return;
         }
 
-        settings.preferredAccountRules = [...settings.preferredAccountRules, newRule];
+        const previousRules = settings.preferredAccountRules;
+        const previousLabels = {...settings.accountLabels};
+
+        settings.preferredAccountRules = existing
+            ? previousRules.map((rule) => (rule.id === candidate.id ? candidate : rule))
+            : [...previousRules, candidate];
+        if (label) {
+            settings.accountLabels = {...settings.accountLabels, [authuser]: label};
+        }
 
         try {
             await persistSettings();
-            preferredTargetInput.value = "";
-            preferredTargetPathInput.value = "";
-            preferredSourceInput.value = "";
-            preferredAuthuserInput.value = "";
+            exitEditMode();
             renderRules();
-            showToast("Rule saved");
+            showToast(existing ? "Rule updated" : "Rule saved");
         } catch (error) {
-            settings.preferredAccountRules = settings.preferredAccountRules.filter((rule) => rule.id !== newRule.id);
+            settings.preferredAccountRules = previousRules;
+            settings.accountLabels = previousLabels;
             showToast(error.message, {variant: "error"});
         }
     };
 
-    addPreferredRuleBtn.addEventListener("click", addPreferredRule);
+    addPreferredRuleBtn.addEventListener("click", saveRuleFromBuilder);
+    cancelEditRuleBtn.addEventListener("click", exitEditMode);
     preferredAuthuserInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") void addPreferredRule();
+        if (e.key === "Enter") void saveRuleFromBuilder();
     });
 
     // --- Site lists (targets + excluded) ---
@@ -353,6 +516,100 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         rulePresetGrid.appendChild(ruleChip);
     }
+
+    // --- Backup ---
+
+    exportBtn.addEventListener("click", () => {
+        const payload = buildSettingsExport(settings, chrome.runtime.getManifest().version);
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+        anchor.href = url;
+        anchor.download = `gacr-settings-${stamp}.json`;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast("Settings exported");
+    });
+
+    importBtn.addEventListener("click", () => importFileInput.click());
+
+    importFileInput.addEventListener("change", async () => {
+        const file = importFileInput.files?.[0];
+        importFileInput.value = "";
+        if (!file) return;
+
+        let validated;
+        try {
+            validated = validateImport(JSON.parse(await file.text()));
+        } catch (error) {
+            showToast(error instanceof SyntaxError ? "That file is not valid JSON" : error.message, {variant: "error"});
+            return;
+        }
+
+        const mode = document.querySelector('input[name="importMode"]:checked')?.value ?? "merge";
+        const imported = validated.settings;
+        let next;
+
+        if (mode === "replace") {
+            next = normalizeSettings(imported);
+        } else {
+            next = {...settings};
+            for (const key of ["enabled", "skipIfAccountSpecified", "interceptExternalClicks", "interceptDirectNavigation", "interceptGoogleNavigation"]) {
+                if (key in imported) next[key] = imported[key];
+            }
+            if (imported.targetSites) {
+                next.targetSites = [...new Set([...settings.targetSites, ...imported.targetSites])];
+            }
+            if (imported.excludedSourceSites) {
+                next.excludedSourceSites = [...new Set([...settings.excludedSourceSites, ...imported.excludedSourceSites])];
+            }
+            if (imported.preferredAccountRules) {
+                const merged = [...settings.preferredAccountRules];
+                for (const rule of imported.preferredAccountRules) {
+                    if (merged.some((existing) => rulesAreEquivalent(existing, rule))) continue;
+                    merged.push(merged.some((existing) => existing.id === rule.id) ? {...rule, id: createRuleId()} : rule);
+                }
+                next.preferredAccountRules = merged;
+            }
+            if (imported.accountLabels) {
+                next.accountLabels = {...settings.accountLabels, ...imported.accountLabels};
+            }
+        }
+
+        const prior = settings;
+        settings = next;
+
+        try {
+            await saveSettings({
+                enabled: settings.enabled,
+                targetSites: settings.targetSites,
+                excludedSourceSites: settings.excludedSourceSites,
+                skipIfAccountSpecified: settings.skipIfAccountSpecified,
+                skipRedirectIfDone: settings.skipIfAccountSpecified,
+                interceptExternalClicks: settings.interceptExternalClicks,
+                interceptDirectNavigation: settings.interceptDirectNavigation,
+                interceptGoogleNavigation: settings.interceptGoogleNavigation,
+                preferredAccountRules: settings.preferredAccountRules,
+                accountLabels: settings.accountLabels,
+            });
+            exitEditMode();
+            renderRules();
+            renderTargets();
+            renderExcluded();
+
+            const {report} = validated;
+            showToast(report.skipped
+                ? `Imported — ${report.skipped} invalid item(s) skipped`
+                : "Settings imported");
+            if (report.reasons.length) {
+                console.warn("Import skipped entries:", report.reasons);
+            }
+        } catch (error) {
+            settings = prior;
+            showToast(error.message, {variant: "error"});
+        }
+    });
 
     // --- About ---
 

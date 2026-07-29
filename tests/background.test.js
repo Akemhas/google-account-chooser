@@ -634,6 +634,44 @@ test("suggestion badge is set on capture, cleared on consume, and OFF when disab
     assert.equal(badge.global, "OFF");
 });
 
+test("disabled rules are skipped and fall through to the chooser", async () => {
+    const {hooks} = createHarness({
+        settings: {
+            preferredAccountRules: [
+                {targetDomain: "drive.google.com", sourceDomain: "", authuser: "1", enabled: false},
+            ],
+        },
+    });
+
+    const decision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/my-drive",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+        tabId: 1,
+    });
+
+    assert.match(decision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+});
+
+test("rules without an enabled field are treated as active", async () => {
+    const {hooks} = createHarness({
+        settings: {
+            preferredAccountRules: [
+                {targetDomain: "drive.google.com", sourceDomain: "", authuser: "1"},
+            ],
+        },
+    });
+
+    const decision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/my-drive",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+        tabId: 1,
+    });
+
+    assert.equal(decision.redirectUrl, "https://drive.google.com/drive/my-drive?authuser=1");
+});
+
 test("normalizeSettings defaults are unchanged after the config.js move", () => {
     const {hooks} = createHarness();
 
@@ -649,10 +687,14 @@ test("normalizeSettings defaults are unchanged after the config.js move", () => 
     assert.equal(defaults.interceptGoogleNavigation, false);
     assert.equal(defaults.preferredAccountRules.length, 0);
 
+    assert.equal(Object.keys(defaults.accountLabels).length, 0);
+
     const legacy = hooks.normalizeSettings({excludedSources: ["a.com"], skipRedirectIfDone: false});
     assert.equal(legacy.excludedSourceSites.length, 1);
     assert.equal(legacy.excludedSourceSites[0], "a.com");
     assert.equal(legacy.skipIfAccountSpecified, false);
+
+    assert.equal(Object.keys(hooks.normalizeSettings({accountLabels: ["not", "a", "map"]}).accountLabels).length, 0);
 });
 
 test("the toggle-enabled command inverts the stored enabled state", async () => {

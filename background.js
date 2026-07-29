@@ -261,6 +261,8 @@ function findPreferredAccountRule({targetUrl, sourceHostname, preferredAccountRu
     const normalizedTargetPath = normalizeRulePathname(targetUrl.pathname);
 
     for (const rule of preferredAccountRules) {
+        if (rule?.enabled === false) continue;
+
         const targetDomain = normalizeRuleDomain(rule?.targetDomain);
         const targetPathPrefix = normalizeRulePathname(rule?.targetPathPrefix ?? "");
         const sourceDomain = normalizeRuleDomain(rule?.sourceDomain);

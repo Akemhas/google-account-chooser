@@ -18,6 +18,8 @@ When working with multiple Google accounts, this helps you choose the correct ac
 - optional direct-navigation interception for typed/bookmarked URLs
 - optional Google-to-Google interception
 - preferred-account rules that add `authuser` directly instead of showing chooser whenever they match
+- rules can be edited in place, toggled on/off individually, and given account labels (e.g. "Work" for `authuser=1`)
+- settings export/import (JSON backup) from the options page
 - suggested account rule capture after chooser-based redirects, with one-click saving from the popup
 - links that open in a new tab (`target=_blank`, middle-click) are intercepted too
 - toolbar badge: "1" when a rule suggestion is waiting for the current tab, "OFF" when disabled

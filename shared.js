@@ -74,6 +74,146 @@ globalThis.rulesAreEquivalent = globalThis.rulesAreEquivalent || ((a, b) =>
 globalThis.createRuleId = globalThis.createRuleId || (() =>
     `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
+globalThis.formatAuthuserLabel = globalThis.formatAuthuserLabel || ((authuser, accountLabels) => {
+    const label = accountLabels?.[authuser];
+    return label ? `authuser=${authuser} · ${label}` : `authuser=${authuser}`;
+});
+
+globalThis.RULES_QUOTA_WARNING_BYTES = globalThis.RULES_QUOTA_WARNING_BYTES || 7500;
+
+globalThis.buildSettingsExport = globalThis.buildSettingsExport || ((settings, appVersion) => ({
+    format: "gacr-settings",
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    appVersion,
+    settings: {
+        enabled: settings.enabled,
+        targetSites: settings.targetSites,
+        excludedSourceSites: settings.excludedSourceSites,
+        skipIfAccountSpecified: settings.skipIfAccountSpecified,
+        interceptExternalClicks: settings.interceptExternalClicks,
+        interceptDirectNavigation: settings.interceptDirectNavigation,
+        interceptGoogleNavigation: settings.interceptGoogleNavigation,
+        preferredAccountRules: settings.preferredAccountRules,
+        accountLabels: settings.accountLabels,
+    },
+}));
+
+// Validates an import payload. Throws on structural problems (wrong format /
+// newer schema); soft-drops invalid entries and reports them.
+globalThis.validateImport = globalThis.validateImport || ((payload) => {
+    if (!payload || typeof payload !== "object") {
+        throw new Error("Not a settings export file");
+    }
+
+    if (payload.format !== "gacr-settings") {
+        throw new Error("Not a settings export file");
+    }
+
+    if (typeof payload.schemaVersion !== "number" || payload.schemaVersion > 1) {
+        throw new Error("This backup was made by a newer version of the extension");
+    }
+
+    const raw = payload.settings;
+    if (!raw || typeof raw !== "object") {
+        throw new Error("The backup contains no settings");
+    }
+
+    const report = {imported: 0, skipped: 0, reasons: []};
+    const settings = {};
+
+    for (const key of ["enabled", "skipIfAccountSpecified", "interceptExternalClicks", "interceptDirectNavigation", "interceptGoogleNavigation"]) {
+        if (typeof raw[key] === "boolean") {
+            settings[key] = raw[key];
+        } else if (key in raw) {
+            report.skipped += 1;
+            report.reasons.push(`${key}: not a boolean`);
+        }
+    }
+
+    for (const key of ["targetSites", "excludedSourceSites"]) {
+        if (!(key in raw)) continue;
+        if (!Array.isArray(raw[key])) {
+            report.skipped += 1;
+            report.reasons.push(`${key}: not a list`);
+            continue;
+        }
+
+        const domains = [];
+        for (const entry of raw[key]) {
+            const domain = typeof entry === "string" ? sanitizeDomainInput(entry) : "";
+            if (domain && isValidDomain(domain) && !domains.includes(domain)) {
+                domains.push(domain);
+            } else {
+                report.skipped += 1;
+                report.reasons.push(`${key}: dropped "${String(entry).slice(0, 60)}"`);
+            }
+        }
+        settings[key] = domains;
+        report.imported += domains.length;
+    }
+
+    if ("preferredAccountRules" in raw) {
+        const rules = [];
+        const seenIds = new Set();
+
+        for (const entry of Array.isArray(raw.preferredAccountRules) ? raw.preferredAccountRules : []) {
+            const targetDomain = typeof entry?.targetDomain === "string" ? sanitizeDomainInput(entry.targetDomain) : "";
+            const authuser = typeof entry?.authuser === "string" ? entry.authuser.trim() : "";
+
+            if (!targetDomain || !isValidDomain(targetDomain) || !authuser) {
+                report.skipped += 1;
+                report.reasons.push(`rule dropped: ${JSON.stringify(entry).slice(0, 80)}`);
+                continue;
+            }
+
+            const sourceDomain = typeof entry.sourceDomain === "string" && entry.sourceDomain.trim()
+                ? sanitizeDomainInput(entry.sourceDomain)
+                : "";
+            if (sourceDomain && !isValidDomain(sourceDomain)) {
+                report.skipped += 1;
+                report.reasons.push(`rule dropped (bad source): ${targetDomain}`);
+                continue;
+            }
+
+            const rule = {
+                id: typeof entry.id === "string" && entry.id && !seenIds.has(entry.id) ? entry.id : createRuleId(),
+                targetDomain,
+                targetPathPrefix: typeof entry.targetPathPrefix === "string" ? sanitizePathPrefixInput(entry.targetPathPrefix) : "",
+                sourceDomain,
+                authuser,
+            };
+            if (entry.enabled === false) rule.enabled = false;
+
+            seenIds.add(rule.id);
+            rules.push(rule);
+            report.imported += 1;
+        }
+
+        settings.preferredAccountRules = rules;
+    }
+
+    if ("accountLabels" in raw) {
+        const labels = {};
+        if (raw.accountLabels && typeof raw.accountLabels === "object" && !Array.isArray(raw.accountLabels)) {
+            for (const [authuser, label] of Object.entries(raw.accountLabels)) {
+                if (authuser.trim() && typeof label === "string" && label.trim()) {
+                    labels[authuser.trim()] = label.trim().slice(0, 32);
+                } else {
+                    report.skipped += 1;
+                    report.reasons.push(`label dropped for "${authuser}"`);
+                }
+            }
+        } else {
+            report.skipped += 1;
+            report.reasons.push("accountLabels: not an object");
+        }
+        settings.accountLabels = labels;
+    }
+
+    return {settings, report};
+});
+
 globalThis.loadSettings = globalThis.loadSettings || (async () => {
     try {
         return {settings: normalizeSettings(await chrome.storage.sync.get(SETTINGS_KEYS)), error: null};
