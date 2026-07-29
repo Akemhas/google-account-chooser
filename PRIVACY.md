@@ -1,6 +1,6 @@
 # Privacy Policy for Google Account Chooser Redirect
 
-**Last Updated:** March 28, 2026
+**Last Updated:** July 29, 2026
 
 ## 1. Overview
 
@@ -29,11 +29,13 @@ The extension does **not** collect or process the following categories as part o
 - location
 - website content beyond the link URL or page URL needed for redirect decisions
 
-## 3. What Is Stored in `chrome.storage.sync`
+## 3. What the Extension Stores
 
-The extension stores settings in `chrome.storage.sync` so preferences can persist across the user's signed-in browser profile.
+All extension data lives in the browser's extension storage. Three storage areas are used, each with a different scope and lifetime. None of this data is transmitted to the developer.
 
-Stored data may include:
+### `chrome.storage.sync` — settings
+
+Settings are stored in `chrome.storage.sync` so preferences can persist across the user's signed-in browser profile. Stored data may include:
 
 - enabled or disabled state
 - target Google service domains
@@ -42,9 +44,22 @@ Stored data may include:
 - preferred account rules
 - document-specific remembered rules
 - user-entered `authuser` values, including numeric account indexes or email-based account hints
-- popup tab preference
 
-This stored data remains in the user's browser storage and is not transmitted to the developer.
+This data is retained until the user edits or removes it, or uninstalls the extension. Chrome may sync it across the user's signed-in browsers as part of normal profile sync.
+
+### `chrome.storage.local` — UI preference
+
+The popup's last-active tab (`popupActiveTab`) is stored in `chrome.storage.local`. It stays on the local device and is retained until the extension is uninstalled or the browser's extension storage is cleared.
+
+### `chrome.storage.session` — short-lived per-tab redirect state
+
+To prevent redirect loops and to offer rule suggestions, the extension keeps short-lived per-tab state in `chrome.storage.session`:
+
+- pending redirects (the destination URL of an in-flight chooser round-trip; expires after 5 minutes)
+- completed redirects (the destination hostname, used to suppress re-interception; expires after 15 seconds)
+- suggested rules (the destination domain, document path prefix, source domain, and `authuser` value observed after a chooser-based redirect; expires after 10 minutes)
+
+This data is held in session storage only: entries expire automatically on the timers above, are removed when their tab is closed, and the entire area is erased by the browser when the browser session ends. It is never written to `chrome.storage.sync` unless the user explicitly saves a suggested rule, and it never leaves the browser.
 
 ## 4. How the Data Is Used
 
@@ -72,7 +87,7 @@ All core behavior is executed locally in the browser.
 The extension currently requests these permissions:
 
 - `storage`
-  Used to persist extension settings in `chrome.storage.sync`.
+  Used to persist extension settings (`chrome.storage.sync`), a UI preference (`chrome.storage.local`), and short-lived per-tab redirect state (`chrome.storage.session`), as described in Section 3.
 - `scripting`
   Used to register and inject the content script that detects supported Google service links and pages.
 - `tabs`
@@ -84,6 +99,12 @@ The extension currently requests these permissions:
 
 ## 7. Data Retention and User Control
 
+Retention differs by storage area:
+
+- settings in `chrome.storage.sync` are kept until the user changes or removes them, or uninstalls the extension
+- the UI preference in `chrome.storage.local` is kept until uninstall or manual storage clearing
+- per-tab state in `chrome.storage.session` expires automatically (5 minutes / 15 seconds / 10 minutes as described in Section 3), is removed when the tab closes, and is erased entirely when the browser session ends
+
 Users can control stored extension data by:
 
 - editing or removing saved rules in the extension popup
@@ -94,3 +115,9 @@ Users can control stored extension data by:
 ## 8. Changes to This Policy
 
 This Privacy Policy may be updated when the extension's behavior, permissions, or data handling changes. The "Last Updated" date at the top of this document will be revised when changes are made.
+
+## 9. Contact
+
+Questions about this policy, or requests concerning stored data, can be directed to: [privacy contact email]
+
+<!-- TODO: replace [privacy contact email] with the address to publish before uploading to the Chrome Web Store. -->

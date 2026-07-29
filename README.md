@@ -39,7 +39,7 @@ google-account-chooser/
 ├── redirector.js              # Content script (2nd): direct-nav redirect + click interception
 ├── popup.html                 # Settings UI markup + styles
 ├── popup.js                   # Settings UI logic
-├── icon.png                   # Extension icon
+├── icons/                     # icon.svg source + rendered 16/32/48/128 PNGs
 ├── tests/
 │   └── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API
 ├── CLAUDE.md                  # Guidance for Claude Code (claude.ai/code)

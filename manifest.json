@@ -1,8 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Google Account Chooser Redirect",
-  "version": "1.5",
-  "description": "Automatically open Google Docs/Drive links with account chooser.",
+  "short_name": "Account Chooser",
+  "version": "1.6",
+  "description": "Open Google links with the right account: route through the Account Chooser or apply saved per-service account rules automatically.",
+  "minimum_chrome_version": "102",
+  "homepage_url": "https://github.com/Akemhas/google-account-chooser",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "storage",
     "scripting",
@@ -17,7 +26,13 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "icon.png"
+    "default_title": "Google Account Chooser Redirect",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
