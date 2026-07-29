@@ -31,7 +31,7 @@ The extension does **not** collect or process the following categories as part o
 
 ## 3. What the Extension Stores
 
-All extension data lives in the browser's extension storage. Two storage areas are used, each with a different scope and lifetime. None of this data is transmitted to the developer.
+All extension data lives in the browser's extension storage. Three storage areas are used, each with a different scope and lifetime. None of this data is transmitted to the developer.
 
 ### `chrome.storage.sync` — settings
 
@@ -47,6 +47,10 @@ Settings are stored in `chrome.storage.sync` so preferences can persist across t
 - user-entered account labels (friendly names shown next to `authuser` values)
 
 This data is retained until the user edits or removes it, or uninstalls the extension. Chrome may sync it across the user's signed-in browsers as part of normal profile sync.
+
+### `chrome.storage.local` — appearance preference
+
+The user's manual theme choice (light/dark override) is stored in `chrome.storage.local`. It stays on the local device and is retained until the user switches back to the system theme or uninstalls the extension.
 
 ### `chrome.storage.session` — short-lived per-tab redirect state
 
@@ -84,7 +88,7 @@ All core behavior is executed locally in the browser.
 The extension currently requests these permissions:
 
 - `storage`
-  Used to persist extension settings (`chrome.storage.sync`) and short-lived per-tab redirect state (`chrome.storage.session`), as described in Section 3.
+  Used to persist extension settings (`chrome.storage.sync`), an appearance preference (`chrome.storage.local`), and short-lived per-tab redirect state (`chrome.storage.session`), as described in Section 3.
 - `scripting`
   Used to register and inject the content script that detects supported Google service links and pages.
 - `tabs`
@@ -101,6 +105,7 @@ The extension currently requests these permissions:
 Retention differs by storage area:
 
 - settings in `chrome.storage.sync` are kept until the user changes or removes them, or uninstalls the extension
+- the appearance preference in `chrome.storage.local` is kept until changed back or uninstall
 - per-tab state in `chrome.storage.session` expires automatically (5 minutes / 15 seconds / 10 minutes as described in Section 3), is removed when the tab closes, and is erased entirely when the browser session ends
 
 Users can control stored extension data by:

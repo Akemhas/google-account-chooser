@@ -40,6 +40,15 @@ globalThis.normalizeRulePathname = globalThis.normalizeRulePathname || ((pathnam
     return normalized || "/";
 });
 
+globalThis.createRuleId = globalThis.createRuleId || (() =>
+    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+globalThis.rulesAreEquivalent = globalThis.rulesAreEquivalent || ((a, b) =>
+    a.targetDomain === b.targetDomain &&
+    (a.targetPathPrefix ?? "") === (b.targetPathPrefix ?? "") &&
+    (a.sourceDomain ?? "") === (b.sourceDomain ?? "") &&
+    a.authuser === b.authuser);
+
 globalThis.SETTINGS_KEYS = globalThis.SETTINGS_KEYS || [
     "enabled",
     "targetSites",
@@ -51,6 +60,7 @@ globalThis.SETTINGS_KEYS = globalThis.SETTINGS_KEYS || [
     "interceptDirectNavigation",
     "interceptGoogleNavigation",
     "dnrInterception",
+    "autoSaveSuggestedRules",
     "preferredAccountRules",
     "accountLabels",
 ];
@@ -64,6 +74,7 @@ globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
     interceptDirectNavigation: data.interceptDirectNavigation ?? false,
     interceptGoogleNavigation: data.interceptGoogleNavigation ?? false,
     dnrInterception: data.dnrInterception ?? false,
+    autoSaveSuggestedRules: data.autoSaveSuggestedRules ?? false,
     preferredAccountRules: Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [],
     accountLabels: data.accountLabels && typeof data.accountLabels === "object" && !Array.isArray(data.accountLabels)
         ? data.accountLabels

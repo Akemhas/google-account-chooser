@@ -709,6 +709,7 @@ test("normalizeSettings defaults are unchanged after the config.js move", () => 
     assert.equal(defaults.preferredAccountRules.length, 0);
 
     assert.equal(Object.keys(defaults.accountLabels).length, 0);
+    assert.equal(defaults.autoSaveSuggestedRules, false);
 
     const legacy = hooks.normalizeSettings({excludedSources: ["a.com"], skipRedirectIfDone: false});
     assert.equal(legacy.excludedSourceSites.length, 1);
@@ -880,6 +881,98 @@ test("orphaned allow rules are swept, foreign rules are left alone", async () =>
 
     assert.equal(harness.dnrSessionRules.some((rule) => rule.id === 500007), false);
     assert.equal(harness.dnrSessionRules.some((rule) => rule.id === 42), true);
+});
+
+test("auto mode saves document rules directly instead of suggesting", async () => {
+    const harness = createHarness({
+        settings: {autoSaveSuggestedRules: true},
+    });
+    const {hooks, listeners, settings, badgeTextByTab} = harness;
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", "slack.com", "external-click");
+    await listeners.onCommitted.at(0)({
+        frameId: 0,
+        tabId: 9,
+        url: "https://docs.google.com/document/u/1/d/abc/edit",
+    });
+
+    assert.equal(settings.preferredAccountRules.length, 1);
+    const rule = settings.preferredAccountRules[0];
+    assert.equal(rule.targetDomain, "docs.google.com");
+    assert.equal(rule.targetPathPrefix, "/document/d/abc");
+    assert.equal(rule.sourceDomain, "slack.com");
+    assert.equal(rule.authuser, "1");
+    assert.equal(typeof rule.id, "string");
+
+    const suggestion = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(suggestion.suggestedRule, null);
+    assert.equal(badgeTextByTab.get(9), "");
+});
+
+test("a fresh suggestion is offered to the page exactly once", async () => {
+    const harness = createHarness();
+    const {hooks, listeners} = harness;
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", "slack.com", "external-click");
+    await listeners.onCommitted.at(0)({
+        frameId: 0,
+        tabId: 9,
+        url: "https://docs.google.com/document/u/2/d/abc/edit",
+    });
+
+    const first = await sendMessage(harness, {type: "getFreshSuggestion"}, {tab: {id: 9}});
+    assert.equal(first.suggestedRule.authuser, "2");
+
+    const second = await sendMessage(harness, {type: "getFreshSuggestion"}, {tab: {id: 9}});
+    assert.equal(second.suggestedRule, null);
+
+    // The popup path is unaffected by the offered flag.
+    const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(popupView.suggestedRule.authuser, "2");
+});
+
+test("the page prompt is suppressed entirely in auto mode", async () => {
+    const harness = createHarness({
+        settings: {autoSaveSuggestedRules: true},
+    });
+    const {hooks, listeners} = harness;
+
+    // A service-wide return (no /d/<id> path) is not auto-saved and stays a suggestion.
+    hooks.setPendingRedirect(4, "https://drive.google.com/", "slack.com", "external-click");
+    await listeners.onCommitted.at(0)({
+        frameId: 0,
+        tabId: 4,
+        url: "https://drive.google.com/?authuser=1",
+    });
+
+    const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 4});
+    assert.equal(popupView.suggestedRule.authuser, "1");
+
+    const pageOffer = await sendMessage(harness, {type: "getFreshSuggestion"}, {tab: {id: 4}});
+    assert.equal(pageOffer.suggestedRule, null);
+});
+
+test("savePageSuggestedRule saves, consumes, and clears the badge", async () => {
+    const harness = createHarness();
+    const {hooks, listeners, settings, badgeTextByTab} = harness;
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", "slack.com", "external-click");
+    await listeners.onCommitted.at(0)({
+        frameId: 0,
+        tabId: 9,
+        url: "https://docs.google.com/document/u/1/d/abc/edit",
+    });
+    assert.equal(badgeTextByTab.get(9), "1");
+
+    const response = await sendMessage(harness, {type: "savePageSuggestedRule"}, {tab: {id: 9}});
+
+    assert.equal(response.ok, true);
+    assert.equal(settings.preferredAccountRules.length, 1);
+    assert.equal(settings.preferredAccountRules[0].targetPathPrefix, "/document/d/abc");
+    assert.equal(badgeTextByTab.get(9), "");
+
+    const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(popupView.suggestedRule, null);
 });
 
 test("suggestions and redirect suppression survive a service-worker restart", async () => {

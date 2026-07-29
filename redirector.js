@@ -74,4 +74,123 @@
         event.preventDefault();
         location.assign(response.redirectUrl);
     }, true);
+
+    // After a chooser-based redirect lands here, offer to remember the chosen
+    // account for this document with a small top-right prompt (ask mode only —
+    // the background answers null in auto mode or when nothing fresh exists).
+    const showSuggestionPrompt = (suggestion) => {
+        const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const palette = dark
+            ? {bg: "#22242b", text: "#e8eaef", muted: "#a4a9b4", border: "#464a55", accent: "#7d95f0", onAccent: "#0f1320"}
+            : {bg: "#ffffff", text: "#1a1d23", muted: "#555b66", border: "#c9ccd4", accent: "#3555d8", onAccent: "#ffffff"};
+
+        const card = document.createElement("div");
+        card.setAttribute("role", "dialog");
+        card.setAttribute("aria-label", "Remember account for this page");
+        Object.assign(card.style, {
+            position: "fixed",
+            top: "16px",
+            right: "16px",
+            zIndex: "2147483647",
+            maxWidth: "320px",
+            padding: "12px 14px",
+            borderRadius: "10px",
+            border: `1px solid ${palette.border}`,
+            background: palette.bg,
+            color: palette.text,
+            font: "13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif",
+            boxShadow: "0 6px 20px rgb(0 0 0 / 0.18)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+        });
+
+        const scope = suggestion.targetPathPrefix
+            ? "this document"
+            : suggestion.targetDomain;
+        const title = document.createElement("div");
+        title.style.fontWeight = "600";
+        title.textContent = `Always open ${scope} with account ${suggestion.authuser}?`;
+
+        const detail = document.createElement("div");
+        Object.assign(detail.style, {color: palette.muted, fontSize: "12px", overflowWrap: "anywhere"});
+        detail.textContent = `${suggestion.targetDomain}${suggestion.targetPathPrefix ?? ""} — skips the account chooser next time.`;
+
+        const actions = document.createElement("div");
+        Object.assign(actions.style, {display: "flex", gap: "8px", justifyContent: "flex-end"});
+
+        const remove = () => {
+            clearTimeout(autoDismissTimer);
+            card.remove();
+        };
+
+        const dismissBtn = document.createElement("button");
+        dismissBtn.textContent = "Not now";
+        Object.assign(dismissBtn.style, {
+            padding: "5px 10px",
+            borderRadius: "8px",
+            border: "1px solid transparent",
+            background: "transparent",
+            color: palette.muted,
+            font: "inherit",
+            fontWeight: "600",
+            cursor: "pointer",
+        });
+        dismissBtn.addEventListener("click", remove);
+
+        const saveBtn = document.createElement("button");
+        saveBtn.textContent = "Save";
+        Object.assign(saveBtn.style, {
+            padding: "5px 12px",
+            borderRadius: "8px",
+            border: "1px solid transparent",
+            background: palette.accent,
+            color: palette.onAccent,
+            font: "inherit",
+            fontWeight: "600",
+            cursor: "pointer",
+        });
+        saveBtn.addEventListener("click", async () => {
+            saveBtn.disabled = true;
+
+            try {
+                const response = await chrome.runtime.sendMessage({type: "savePageSuggestedRule"});
+                title.textContent = response?.ok ? "Saved" : "Could not save the rule";
+            } catch {
+                title.textContent = "Could not save the rule";
+            }
+
+            detail.remove();
+            actions.remove();
+            setTimeout(remove, 1500);
+        });
+
+        actions.appendChild(dismissBtn);
+        actions.appendChild(saveBtn);
+        card.appendChild(title);
+        card.appendChild(detail);
+        card.appendChild(actions);
+        (document.body ?? document.documentElement).appendChild(card);
+
+        const autoDismissTimer = setTimeout(remove, 12000);
+    };
+
+    if (isTargetLink(window.location.href)) {
+        const requestSuggestionPrompt = async () => {
+            try {
+                const response = await chrome.runtime.sendMessage({type: "getFreshSuggestion"});
+                if (response?.suggestedRule) showSuggestionPrompt(response.suggestedRule);
+            } catch {
+                // Service worker unreachable — skip the prompt.
+            }
+        };
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => {
+                void requestSuggestionPrompt();
+            }, {once: true});
+        } else {
+            void requestSuggestionPrompt();
+        }
+    }
 })();

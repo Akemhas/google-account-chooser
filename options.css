@@ -276,3 +276,38 @@ body {
 .about-links a:hover {
     text-decoration: underline;
 }
+
+.theme-field {
+    max-width: 240px;
+    margin-top: var(--space-3);
+}
+
+.rule-list .list-item-inner {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+    .options-shell {
+        flex-direction: column;
+    }
+
+    .options-sidebar {
+        width: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: var(--space-3) var(--space-4);
+    }
+
+    .options-brand {
+        margin-bottom: var(--space-3);
+    }
+
+    .options-nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .options-main {
+        padding: var(--space-4);
+    }
+}

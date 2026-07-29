@@ -35,6 +35,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const versionLabel = document.getElementById("versionLabel");
     const shortcutsLink = document.getElementById("shortcutsLink");
+    const themeSelect = document.getElementById("themeSelect");
+
+    themeSelect.value = await initTheme();
+    themeSelect.addEventListener("change", () => {
+        void setTheme(themeSelect.value);
+    });
 
     let settings;
 

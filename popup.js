@@ -11,8 +11,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     const interceptDirectNavigation = document.getElementById("interceptDirectNavigation");
     const interceptGoogleNavigation = document.getElementById("interceptGoogleNavigation");
     const dnrInterception = document.getElementById("dnrInterception");
+    const autoSaveSuggestedRules = document.getElementById("autoSaveSuggestedRules");
     const versionLabel = document.getElementById("versionLabel");
+    const themeToggleBtn = document.getElementById("themeToggleBtn");
     const openOptionsBtn = document.getElementById("openOptionsBtn");
+
+    let currentTheme = await initTheme();
+
+    const THEME_LABELS = {system: "System", light: "Light", dark: "Dark"};
+    const THEME_CYCLE = {system: "light", light: "dark", dark: "system"};
+
+    const renderThemeButton = () => {
+        themeToggleBtn.textContent = `Theme: ${THEME_LABELS[currentTheme]}`;
+    };
+
+    themeToggleBtn.addEventListener("click", async () => {
+        currentTheme = THEME_CYCLE[currentTheme];
+        renderThemeButton();
+        await setTheme(currentTheme);
+    });
+
+    renderThemeButton();
 
     let settings;
     let activeTabId = null;
@@ -34,6 +53,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             interceptDirectNavigation: interceptDirectNavigation.checked,
             interceptGoogleNavigation: interceptGoogleNavigation.checked,
             dnrInterception: dnrInterception.checked,
+            autoSaveSuggestedRules: autoSaveSuggestedRules.checked,
             preferredAccountRules: settings.preferredAccountRules,
         });
     };
@@ -47,9 +67,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const renderContextCard = () => {
         if (!activeTabHostname) {
-            contextHostname.textContent = "No page context";
-            contextStatus.textContent = "Open a website to see its status";
-            contextStatus.className = "chip";
+            contextHostname.textContent = "No active website";
+            contextStatus.textContent = "Open a website to see its status here.";
+            contextStatus.className = "context-note";
             contextExcludeBtn.hidden = true;
             return;
         }
@@ -202,7 +222,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation, dnrInterception]
+    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation, dnrInterception, autoSaveSuggestedRules]
         .forEach((input) => {
             input.addEventListener("change", async () => {
                 try {
@@ -224,6 +244,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     interceptDirectNavigation.checked = settings.interceptDirectNavigation;
     interceptGoogleNavigation.checked = settings.interceptGoogleNavigation;
     dnrInterception.checked = settings.dnrInterception;
+    autoSaveSuggestedRules.checked = settings.autoSaveSuggestedRules;
     versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
 
     updateEnabledState();

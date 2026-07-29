@@ -73,13 +73,24 @@
                     <span class="switch-track"></span>
                 </span>
             </label>
+            <label class="toggle-row">
+                <span class="toggle-copy">Save document rules without asking</span>
+                <span class="switch">
+                    <input type="checkbox" id="autoSaveSuggestedRules">
+                    <span class="switch-track"></span>
+                </span>
+            </label>
         </div>
+        <p class="section-note">When off, a small prompt on the page asks before a document rule is saved.</p>
     </section>
 </main>
 
 <footer class="popup-footer">
     <span class="footer-version" id="versionLabel"></span>
-    <button class="btn btn-ghost" id="openOptionsBtn">Manage rules &amp; sites</button>
+    <div class="footer-actions">
+        <button class="btn btn-ghost" id="themeToggleBtn" aria-label="Switch color theme"></button>
+        <button class="btn btn-ghost" id="openOptionsBtn">Manage rules &amp; sites</button>
+    </div>
 </footer>
 
 <script src="config.js"></script>

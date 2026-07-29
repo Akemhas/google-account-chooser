@@ -65,14 +65,42 @@ globalThis.sanitizePathPrefixInput = globalThis.sanitizePathPrefixInput || ((inp
 globalThis.domainMatchesList = globalThis.domainMatchesList || ((hostname, domains) =>
     domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`)));
 
-globalThis.rulesAreEquivalent = globalThis.rulesAreEquivalent || ((a, b) =>
-    a.targetDomain === b.targetDomain &&
-    (a.targetPathPrefix ?? "") === (b.targetPathPrefix ?? "") &&
-    (a.sourceDomain ?? "") === (b.sourceDomain ?? "") &&
-    a.authuser === b.authuser);
+// Theme override for extension pages. "system" clears the override so the
+// prefers-color-scheme media query in tokens.css takes effect.
+globalThis.THEME_STORAGE_KEY = globalThis.THEME_STORAGE_KEY || "theme";
 
-globalThis.createRuleId = globalThis.createRuleId || (() =>
-    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+globalThis.applyTheme = globalThis.applyTheme || ((theme) => {
+    if (theme === "light" || theme === "dark") {
+        document.documentElement.dataset.theme = theme;
+    } else {
+        delete document.documentElement.dataset.theme;
+    }
+});
+
+globalThis.initTheme = globalThis.initTheme || (async () => {
+    try {
+        const data = await chrome.storage.local.get(THEME_STORAGE_KEY);
+        const theme = data[THEME_STORAGE_KEY];
+        applyTheme(theme);
+        return theme === "light" || theme === "dark" ? theme : "system";
+    } catch {
+        return "system";
+    }
+});
+
+globalThis.setTheme = globalThis.setTheme || (async (theme) => {
+    applyTheme(theme);
+
+    try {
+        if (theme === "light" || theme === "dark") {
+            await chrome.storage.local.set({[THEME_STORAGE_KEY]: theme});
+        } else {
+            await chrome.storage.local.remove(THEME_STORAGE_KEY);
+        }
+    } catch (error) {
+        console.error("Failed to persist theme:", error);
+    }
+});
 
 globalThis.formatAuthuserLabel = globalThis.formatAuthuserLabel || ((authuser, accountLabels) => {
     const label = accountLabels?.[authuser];

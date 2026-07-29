@@ -8,6 +8,16 @@ const ALLOW_RULE_ID_BASE = 500000;
 const statusText = document.getElementById("statusText");
 const backBtn = document.getElementById("backBtn");
 
+// Honor the user's manual theme override; fire-and-forget — the page is
+// usually gone before this resolves, which is fine.
+chrome.storage.local.get("theme")
+    .then(({theme}) => {
+        if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+        }
+    })
+    .catch(() => {});
+
 const markerIndex = location.href.indexOf(TARGET_MARKER);
 const target = markerIndex === -1 ? "" : location.href.slice(markerIndex + TARGET_MARKER.length);
 

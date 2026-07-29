@@ -790,6 +790,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message?.type === "getFreshSuggestion") {
+        const tabId = sender.tab?.id ?? -1;
+
+        ensureSessionStateLoaded()
+            .then(async () => {
+                if (cleanupSuggestedRules()) persistSessionState();
+
+                const settings = await getSettings();
+                const suggestion = suggestedRulesByTab.get(tabId);
+                const isFresh = suggestion && Date.now() - suggestion.createdAt < 30 * 1000;
+
+                if (!suggestion || !isFresh || suggestion.offered || settings.autoSaveSuggestedRules) {
+                    sendResponse({suggestedRule: null});
+                    return;
+                }
+
+                suggestion.offered = true;
+                persistSessionState();
+                sendResponse({suggestedRule: suggestion});
+            })
+            .catch((error) => {
+                console.error("Failed to fetch fresh suggestion:", error);
+                sendResponse({suggestedRule: null});
+            });
+
+        return true;
+    }
+
+    if (message?.type === "savePageSuggestedRule") {
+        const tabId = sender.tab?.id ?? -1;
+
+        ensureSessionStateLoaded()
+            .then(async () => {
+                const suggestion = suggestedRulesByTab.get(tabId);
+                if (!suggestion) {
+                    sendResponse({ok: false});
+                    return;
+                }
+
+                await savePreferredRule(suggestion);
+                if (suggestedRulesByTab.delete(tabId)) persistSessionState();
+                updateSuggestionBadge(tabId);
+                sendResponse({ok: true});
+            })
+            .catch((error) => {
+                console.error("Failed to save suggested rule from page:", error);
+                sendResponse({ok: false});
+            });
+
+        return true;
+    }
+
     if (message?.type === "consumeSuggestedRule") {
         ensureSessionStateLoaded()
             .then(() => {
@@ -814,6 +866,26 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) =>
     })
 );
 
+async function savePreferredRule(rule) {
+    const settings = await getSettings();
+
+    if (settings.preferredAccountRules.some((existing) => rulesAreEquivalent(existing, rule))) {
+        return false;
+    }
+
+    await chrome.storage.sync.set({
+        preferredAccountRules: [...settings.preferredAccountRules, {
+            id: createRuleId(),
+            targetDomain: rule.targetDomain,
+            targetPathPrefix: rule.targetPathPrefix ?? "",
+            sourceDomain: rule.sourceDomain ?? "",
+            authuser: rule.authuser,
+        }],
+    });
+
+    return true;
+}
+
 async function handleCommittedNavigation(details) {
     if (details.frameId !== 0 || details.tabId < 0) return;
 
@@ -831,7 +903,20 @@ async function handleCommittedNavigation(details) {
     if (pendingRedirect && isPendingRedirectReturn(details.tabId, details.url)) {
         const suggestedRule = createSuggestedRuleFromUrl(details.url, pendingRedirect.sourceHostname);
         if (suggestedRule) {
-            suggestedRulesByTab.set(details.tabId, suggestedRule);
+            const settings = await getSettings();
+
+            // Auto mode saves document-specific rules outright; service-wide
+            // suggestions are too broad to save unasked and stay suggestions.
+            if (settings.autoSaveSuggestedRules && suggestedRule.targetPathPrefix) {
+                try {
+                    await savePreferredRule(suggestedRule);
+                } catch (error) {
+                    console.error("Failed to auto-save suggested rule:", error);
+                    suggestedRulesByTab.set(details.tabId, suggestedRule);
+                }
+            } else {
+                suggestedRulesByTab.set(details.tabId, suggestedRule);
+            }
         }
 
         setCompletedRedirect(details.tabId, details.url);
