@@ -50,7 +50,8 @@ google-account-chooser/
 ├── popup.html / popup.css / popup.js       # Action popup: status, quick actions, toggles
 ├── options.html / options.css / options.js # Options page: rules, target sites, excluded sources
 ├── interstitial.html / .css / .js          # DNR pre-request redirect page (experimental)
-├── icons/                     # icon.svg source + rendered 16/32/48/128 PNGs
+├── icon.png                   # Original 1024px icon artwork (source for icons/)
+├── icons/                     # 16/32/48/128 PNGs rendered from icon.png
 ├── tests/
 │   ├── background.test.js     # node:test suite — runs background.js in a vm with mocked chrome API
 │   └── shared.test.js         # pure-helper coverage for config.js + shared.js
