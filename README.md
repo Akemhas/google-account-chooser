@@ -15,8 +15,9 @@ When working with multiple Google accounts, this helps you choose the correct ac
 - excluded source domains where click interception should not run
 - optional direct-navigation interception for typed/bookmarked URLs
 - optional Google-to-Google interception
-- optional preferred-account rules that add `authuser` directly instead of showing chooser
-- suggested account rule capture after chooser-based redirects
+- preferred-account rules that add `authuser` directly instead of showing chooser whenever they match
+- suggested account rule capture after chooser-based redirects, with one-click saving from the popup
+- page reloads and back/forward navigations are never intercepted, and URLs that already name an account (`authuser` or `/u/N/`) open directly
 
 ## Stored Settings
 
@@ -55,4 +56,4 @@ google-account-chooser/
 
 ## Repo Notes
 
-The repository root is the unpacked extension source — there is no build step. Load the repo folder directly as an unpacked extension. Tests use Node's built-in test runner: `node --test tests/` (Node 18+, no dependencies).
+The repository root is the unpacked extension source — there is no build step. Load the repo folder directly as an unpacked extension. Tests use Node's built-in test runner: `node --test` (Node 18+, no dependencies).

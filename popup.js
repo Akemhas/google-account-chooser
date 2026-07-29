@@ -80,12 +80,16 @@ const sanitizePathPrefixInput = (input) => {
     const trimmed = input.trim();
     if (!trimmed) return "";
 
+    let normalized;
     try {
         const parsed = new URL(trimmed.startsWith("http") ? trimmed : `https://example.com${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`);
-        return normalizeRulePathname(parsed.pathname);
+        normalized = normalizeRulePathname(parsed.pathname);
     } catch {
-        return normalizeRulePathname(trimmed.startsWith("/") ? trimmed : `/${trimmed}`);
+        normalized = normalizeRulePathname(trimmed.startsWith("/") ? trimmed : `/${trimmed}`);
     }
+
+    // A bare "/" behaves service-wide, so store it as an empty prefix.
+    return normalized === "/" ? "" : normalized;
 };
 
 const SERVICE_PRESETS = [
@@ -165,7 +169,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const interceptExternalClicks = document.getElementById("interceptExternalClicks");
     const interceptDirectNavigation = document.getElementById("interceptDirectNavigation");
     const interceptGoogleNavigation = document.getElementById("interceptGoogleNavigation");
-    const usePreferredAccountRules = document.getElementById("usePreferredAccountRules");
 
     const targetsList = document.getElementById("targetsList");
     const excludedList = document.getElementById("excludedList");
@@ -215,7 +218,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const persistActiveTab = async () => {
         try {
-            await chrome.storage.sync.set({
+            await chrome.storage.local.set({
                 [POPUP_ACTIVE_TAB_KEY]: activePopupTab,
             });
         } catch (error) {
@@ -223,8 +226,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     };
 
+    let data = {};
     try {
-        const data = await chrome.storage.sync.get([
+        data = await chrome.storage.sync.get([
             "enabled",
             "targetSites",
             "excludedSourceSites",
@@ -233,28 +237,33 @@ document.addEventListener("DOMContentLoaded", async () => {
             "interceptExternalClicks",
             "interceptDirectNavigation",
             "interceptGoogleNavigation",
-            "usePreferredAccountRules",
             "preferredAccountRules",
-            POPUP_ACTIVE_TAB_KEY,
         ]);
-
-        enabled.checked = data.enabled ?? true;
-        skipIfAccountSpecified.checked = data.skipIfAccountSpecified ?? data.skipRedirectIfDone ?? true;
-        interceptExternalClicks.checked = data.interceptExternalClicks ?? true;
-        interceptDirectNavigation.checked = data.interceptDirectNavigation ?? false;
-        interceptGoogleNavigation.checked = data.interceptGoogleNavigation ?? false;
-        usePreferredAccountRules.checked = data.usePreferredAccountRules ?? false;
-        targetSites = data.targetSites && data.targetSites.length > 0 ? data.targetSites : [...DEFAULT_GOOGLE_DOMAINS];
-        targetSites.sort();
-        excludedSourceSites = data.excludedSourceSites ?? [];
-        preferredAccountRules = Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [];
-        activePopupTab = typeof data[POPUP_ACTIVE_TAB_KEY] === "string" ? data[POPUP_ACTIVE_TAB_KEY] : "preferences";
-        updateEnabledState();
     } catch (error) {
         console.error("Failed to load settings:", error);
         showError("Failed to load settings");
-        return;
     }
+
+    enabled.checked = data.enabled ?? true;
+    skipIfAccountSpecified.checked = data.skipIfAccountSpecified ?? data.skipRedirectIfDone ?? true;
+    interceptExternalClicks.checked = data.interceptExternalClicks ?? true;
+    interceptDirectNavigation.checked = data.interceptDirectNavigation ?? false;
+    interceptGoogleNavigation.checked = data.interceptGoogleNavigation ?? false;
+    targetSites = data.targetSites && data.targetSites.length > 0 ? data.targetSites : [...DEFAULT_GOOGLE_DOMAINS];
+    targetSites.sort();
+    excludedSourceSites = data.excludedSourceSites ?? [];
+    preferredAccountRules = Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [];
+    updateEnabledState();
+
+    try {
+        const localData = await chrome.storage.local.get(POPUP_ACTIVE_TAB_KEY);
+        activePopupTab = typeof localData[POPUP_ACTIVE_TAB_KEY] === "string" ? localData[POPUP_ACTIVE_TAB_KEY] : "preferences";
+    } catch (error) {
+        console.error("Failed to load popup tab:", error);
+    }
+
+    // The active tab used to live in sync storage; purge the legacy key.
+    chrome.storage.sync.remove(POPUP_ACTIVE_TAB_KEY).catch(() => {});
 
     const saveSettings = async () => {
         try {
@@ -267,7 +276,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 interceptExternalClicks: interceptExternalClicks.checked,
                 interceptDirectNavigation: interceptDirectNavigation.checked,
                 interceptGoogleNavigation: interceptGoogleNavigation.checked,
-                usePreferredAccountRules: usePreferredAccountRules.checked,
                 preferredAccountRules,
             });
         } catch (error) {
@@ -661,6 +669,42 @@ document.addEventListener("DOMContentLoaded", async () => {
             preferredAuthuserInput.value = "";
             renderPreferredRules();
             renderSavedDocumentRules();
+            renderSuggestedRuleHint();
+        } catch (error) {
+            preferredAccountRules = preferredAccountRules.filter((rule) => rule.id !== newRule.id);
+        }
+    };
+
+    const saveSuggestedRule = async () => {
+        if (!suggestedRuleCandidate) return;
+
+        const newRule = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            targetDomain: suggestedRuleCandidate.targetDomain,
+            targetPathPrefix: suggestedRuleCandidate.targetPathPrefix === "/" ? "" : (suggestedRuleCandidate.targetPathPrefix ?? ""),
+            sourceDomain: suggestedRuleCandidate.sourceDomain ?? "",
+            authuser: suggestedRuleCandidate.authuser,
+        };
+
+        const duplicate = preferredAccountRules.some((rule) =>
+            rule.targetDomain === newRule.targetDomain &&
+            (rule.targetPathPrefix ?? "") === newRule.targetPathPrefix &&
+            (rule.sourceDomain ?? "") === newRule.sourceDomain &&
+            rule.authuser === newRule.authuser
+        );
+
+        if (duplicate) {
+            renderSuggestedRuleHint();
+            return;
+        }
+
+        preferredAccountRules.push(newRule);
+
+        try {
+            await saveSettings();
+            renderPreferredRules();
+            renderSavedDocumentRules();
+            renderSuggestedRuleHint();
         } catch (error) {
             preferredAccountRules = preferredAccountRules.filter((rule) => rule.id !== newRule.id);
         }
@@ -679,6 +723,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             await saveSettings();
             renderPreferredRules();
             renderSavedDocumentRules();
+            renderSuggestedRuleHint();
         } catch (error) {
             preferredAccountRules = previousRules;
         }
@@ -705,13 +750,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     addPreferredRuleBtn.addEventListener("click", addPreferredRule);
     useSuggestedRuleBtn.addEventListener("click", () => {
-        if (!suggestedRuleCandidate) return;
-
-        preferredTargetInput.value = suggestedRuleCandidate.targetDomain;
-        preferredTargetPathInput.value = suggestedRuleCandidate.targetPathPrefix ?? "";
-        preferredSourceInput.value = suggestedRuleCandidate.sourceDomain ?? "";
-        preferredAuthuserInput.value = suggestedRuleCandidate.authuser;
-        preferredAuthuserInput.focus();
+        void saveSuggestedRule();
     });
     preferredAuthuserInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
@@ -729,7 +768,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation, usePreferredAccountRules]
+    [skipIfAccountSpecified, interceptExternalClicks, interceptDirectNavigation, interceptGoogleNavigation]
         .forEach((input) => {
             input.addEventListener("change", async () => {
                 try {

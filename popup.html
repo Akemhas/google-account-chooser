@@ -747,7 +747,7 @@
                 <div class="disabled-copy">Turn on the main switch in the header to edit sites, rules, and redirect behavior.</div>
             </div>
         </div>
-        <div class="tab-panel" id="settings-panel" role="tabpanel" aria-labelledby="tab-settings">
+        <div class="tab-panel settings-panel" id="settings-panel" role="tabpanel" aria-labelledby="tab-settings">
             <div class="panel-scroll">
                 <div class="settings-header">
                     <div class="settings-title">Redirect Behavior</div>
@@ -781,13 +781,6 @@
                             <span class="setting-copy">Use this if switching between Gmail, Drive, Docs, and other Google apps should ask again.</span>
                         </label>
                         <span id="interceptGoogleNavigation-description" class="sr-only">If checked, links clicked while already inside a supported Google service can also route through Account Chooser.</span>
-                    </div>
-                    <div class="setting-row">
-                        <input type="checkbox" id="usePreferredAccountRules" aria-describedby="usePreferredAccountRules-description">
-                        <label for="usePreferredAccountRules">Use remembered account rules when available
-                            <span class="setting-copy">If a saved rule matches, the extension adds `authuser` directly instead of showing chooser.</span>
-                        </label>
-                        <span id="usePreferredAccountRules-description" class="sr-only">If checked, matching remembered account rules will add an authuser hint instead of forcing Account Chooser.</span>
                     </div>
                 </div>
             </div>
@@ -833,7 +826,18 @@
             <div class="panel-scroll">
                 <div class="rules-toolbar">
                     <div class="rules-title">Remembered Account Rules</div>
-                    <div class="rules-subtitle">Rules are optional. When enabled, matching rules can target an entire service or a specific Google document path and add `authuser` directly instead of forcing Account Chooser.</div>
+                    <div class="rules-subtitle">When a saved rule matches, the extension opens the link with its `authuser` directly instead of showing Account Chooser. Rules can target an entire service or a specific Google document path.</div>
+                </div>
+                <div class="rule-card">
+                    <div class="rule-card-title">Suggestion From Recent Chooser</div>
+                    <div class="rule-card-copy" id="suggestedRuleHint">
+                    No recent chooser-based suggestion for this tab yet.
+                    </div>
+                    <div class="rule-card-actions">
+                        <button class="rule-ghost-btn" id="useSuggestedRuleBtn" type="button" disabled aria-label="Save suggested rule">
+                            Save Suggested Rule
+                        </button>
+                    </div>
                 </div>
                 <div class="rule-card">
                     <div class="rule-card-title">Saved Documents</div>
@@ -844,17 +848,6 @@
                 <div class="scrollable-list" id="preferredRulesList" role="list" aria-label="Preferred account rules list">
                 </div>
                 <div class="rule-builder">
-                    <div class="rule-card">
-                        <div class="rule-card-title">Suggestion From Recent Chooser</div>
-                        <div class="rule-card-copy" id="suggestedRuleHint">
-                        No recent chooser-based suggestion for this tab yet.
-                        </div>
-                        <div class="rule-card-actions">
-                            <button class="rule-ghost-btn" id="useSuggestedRuleBtn" type="button" disabled aria-label="Use suggested rule values">
-                                Use Suggestion
-                            </button>
-                        </div>
-                    </div>
                     <div class="rule-card">
                         <div class="rule-card-title">Create Rule</div>
                         <div class="field-stack">

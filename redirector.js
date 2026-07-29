@@ -1,20 +1,18 @@
 (async () => {
-    const {
-        enabled = true,
-        targetSites = DEFAULT_GOOGLE_DOMAINS,
-        excludedSourceSites = [],
-        excludedSources = [],
-    } = await chrome.storage.sync.get([
+    const data = await chrome.storage.sync.get([
         "enabled",
         "targetSites",
         "excludedSourceSites",
         "excludedSources",
     ]);
 
+    const enabled = data.enabled ?? true;
+    const targetSites = data.targetSites?.length ? data.targetSites : DEFAULT_GOOGLE_DOMAINS;
+
     if (!enabled) return;
 
     const currentSiteHostname = location.hostname;
-    const excludedSites = excludedSourceSites.length > 0 ? excludedSourceSites : excludedSources;
+    const excludedSites = data.excludedSourceSites ?? data.excludedSources ?? [];
 
     if (excludedSites.some((site) => currentSiteHostname === site || currentSiteHostname.endsWith(`.${site}`))) {
         return;
@@ -29,8 +27,11 @@
         }
     };
 
+    // Reloads, back/forward, and prerenders must never re-trigger the chooser.
+    const navigationEntryType = performance.getEntriesByType("navigation")[0]?.type ?? "navigate";
+
     const currentUrl = window.location.href;
-    if (isTargetLink(currentUrl)) {
+    if (navigationEntryType === "navigate" && isTargetLink(currentUrl)) {
         try {
             const response = await chrome.runtime.sendMessage({
                 type: "getRedirectUrl",
@@ -39,7 +40,7 @@
                 sourceHostname: null,
             });
 
-            if (response?.redirectUrl) {
+            if (response?.redirectUrl && response.redirectUrl !== location.href) {
                 location.replace(response.redirectUrl);
                 return;
             }
