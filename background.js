@@ -111,6 +111,56 @@ function hasExplicitAccount(url) {
     return url.searchParams.has("authuser") || /\/u\/\d+(\/|$)/.test(url.pathname);
 }
 
+// URL shapes that point at an account-scoped resource. These always route
+// through the chooser (bypassing the navigation-type toggles) when they name
+// no account and match no rule — the extension cannot guess the account.
+function isAccountScopedResourceUrl(url) {
+    if (/\/d\/[^/]+/.test(url.pathname)) return true;
+    if (/\/folders\/[^/]+/.test(url.pathname)) return true;
+    if ((url.pathname === "/open" || url.pathname === "/uc") && url.searchParams.has("id")) return true;
+
+    if (isSubdomainOrMatch(url.hostname, "mail.google.com")) {
+        return (
+            url.pathname.startsWith("/mail") &&
+            /^#(?:inbox|all|imp|starred|snoozed|sent|drafts|spam|trash|label\/[^/]+|search\/[^/]+)\/[^/]+$/.test(url.hash)
+        );
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "calendar.google.com")) {
+        return url.searchParams.has("eid") || /\/eventedit(\/|$)/.test(url.pathname);
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "photos.google.com")) {
+        return /^\/(?:album|photo|share)\//.test(url.pathname);
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "meet.google.com")) {
+        return /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(url.pathname) || url.pathname.startsWith("/lookup/");
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "chat.google.com")) {
+        return /^\/(?:room|dm)\//.test(url.pathname);
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "classroom.google.com")) {
+        return /^\/c\//.test(url.pathname);
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "keep.google.com")) {
+        return /^#(?:NOTE|LIST)\//i.test(url.hash);
+    }
+
+    if (isSubdomainOrMatch(url.hostname, "console.firebase.google.com")) {
+        return /^\/project\//.test(url.pathname);
+    }
+
+    if (url.hostname === "console.cloud.google.com") {
+        return url.searchParams.has("project");
+    }
+
+    return false;
+}
+
 function cleanupExpiredEntries(map, ttlMs) {
     const now = Date.now();
     let removed = false;
@@ -421,16 +471,18 @@ async function getRedirectDecision({url, navigationType, sourceHostname, tabId})
         return {redirectUrl: rewrittenUrl};
     }
 
-    if (navigationType === "external-click" && !settings.interceptExternalClicks) {
-        return {redirectUrl: null};
-    }
+    if (!isAccountScopedResourceUrl(parsedUrl)) {
+        if (navigationType === "external-click" && !settings.interceptExternalClicks) {
+            return {redirectUrl: null};
+        }
 
-    if (navigationType === "google-navigation" && !settings.interceptGoogleNavigation) {
-        return {redirectUrl: null};
-    }
+        if (navigationType === "google-navigation" && !settings.interceptGoogleNavigation) {
+            return {redirectUrl: null};
+        }
 
-    if (navigationType === "direct-navigation" && !settings.interceptDirectNavigation) {
-        return {redirectUrl: null};
+        if (navigationType === "direct-navigation" && !settings.interceptDirectNavigation) {
+            return {redirectUrl: null};
+        }
     }
 
     const redirectUrl = buildChooserUrl(url);
@@ -900,28 +952,40 @@ async function handleCommittedNavigation(details) {
     cleanupAllExpiredState();
 
     const pendingRedirect = pendingRedirectsByTab.get(details.tabId);
+
+    if (pendingRedirect && !pendingRedirect.chooserVisited && parseUrl(details.url)?.hostname === "accounts.google.com") {
+        pendingRedirect.chooserVisited = true;
+        persistSessionState();
+    }
+
     if (pendingRedirect && isPendingRedirectReturn(details.tabId, details.url)) {
         const suggestedRule = createSuggestedRuleFromUrl(details.url, pendingRedirect.sourceHostname);
-        if (suggestedRule) {
-            const settings = await getSettings();
 
-            // Auto mode saves document-specific rules outright; service-wide
-            // suggestions are too broad to save unasked and stay suggestions.
-            if (settings.autoSaveSuggestedRules && suggestedRule.targetPathPrefix) {
-                try {
-                    await savePreferredRule(suggestedRule);
-                } catch (error) {
-                    console.error("Failed to auto-save suggested rule:", error);
+        // A markerless commit on the destination before the tab has been to the
+        // chooser is the original navigation winning the race against our own
+        // tabs.update redirect — keep the pending entry for the real return.
+        if (suggestedRule || pendingRedirect.chooserVisited) {
+            if (suggestedRule) {
+                const settings = await getSettings();
+
+                // Auto mode saves document-specific rules outright; service-wide
+                // suggestions are too broad to save unasked and stay suggestions.
+                if (settings.autoSaveSuggestedRules && suggestedRule.targetPathPrefix) {
+                    try {
+                        await savePreferredRule(suggestedRule);
+                    } catch (error) {
+                        console.error("Failed to auto-save suggested rule:", error);
+                        suggestedRulesByTab.set(details.tabId, suggestedRule);
+                    }
+                } else {
                     suggestedRulesByTab.set(details.tabId, suggestedRule);
                 }
-            } else {
-                suggestedRulesByTab.set(details.tabId, suggestedRule);
             }
-        }
 
-        setCompletedRedirect(details.tabId, details.url);
-        pendingRedirectsByTab.delete(details.tabId);
-        persistSessionState();
+            setCompletedRedirect(details.tabId, details.url);
+            pendingRedirectsByTab.delete(details.tabId);
+            persistSessionState();
+        }
     }
 
     updateSuggestionBadge(details.tabId);
@@ -1006,6 +1070,7 @@ if (globalThis.__GACR_ENABLE_TEST_HOOKS__) {
         handleInterstitialDecision,
         handleTabRemoved,
         hasExplicitAccount,
+        isAccountScopedResourceUrl,
         sweepOrphanAllowRules,
         syncDnrRules,
         isCompletedRedirectReturn,

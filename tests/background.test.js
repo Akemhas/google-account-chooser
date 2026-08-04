@@ -500,6 +500,178 @@ test("chooser return with only a /u/N/ path yields a suggestion with a trimmed p
     assert.equal(response.suggestedRule.sourceDomain, "slack.com");
 });
 
+test("isAccountScopedResourceUrl recognizes account-scoped shapes across services", () => {
+    const {hooks} = createHarness();
+
+    const scoped = [
+        "https://docs.google.com/document/d/abc123/edit",
+        "https://docs.google.com/spreadsheets/d/abc123/edit#gid=0",
+        "https://drive.google.com/file/d/abc123/view",
+        "https://drive.google.com/drive/folders/14Qj219lJGsuRxkh3oH_2?usp=drive_link",
+        "https://drive.google.com/open?id=abc123",
+        "https://drive.google.com/uc?export=download&id=abc123",
+        "https://mail.google.com/mail/#inbox/FMfcgzGtwqYbpFyGnDCLZzdVLBrbLDlq",
+        "https://mail.google.com/mail/#search/report/QgrcJHsbjzj",
+        "https://calendar.google.com/calendar/event?action=VIEW&eid=bXYzdGFza3M",
+        "https://calendar.google.com/calendar/r/eventedit/bXYzdGFza3M",
+        "https://photos.google.com/album/AF1QipMDa",
+        "https://photos.google.com/share/AF1QipMDa",
+        "https://meet.google.com/abc-defg-hij",
+        "https://meet.google.com/lookup/abcdefg",
+        "https://chat.google.com/room/AAAAtBz",
+        "https://classroom.google.com/c/NDU2Nzg5",
+        "https://keep.google.com/#NOTE/1abc",
+        "https://console.firebase.google.com/project/my-app/overview",
+        "https://console.cloud.google.com/run?project=my-app",
+    ];
+
+    const unscoped = [
+        "https://drive.google.com/drive/my-drive",
+        "https://mail.google.com/mail/#inbox",
+        "https://calendar.google.com/calendar/r",
+        "https://photos.google.com/",
+        "https://meet.google.com/",
+        "https://chat.google.com/",
+        "https://classroom.google.com/h",
+        "https://keep.google.com/",
+        "https://console.cloud.google.com/run",
+    ];
+
+    for (const url of scoped) {
+        assert.equal(hooks.isAccountScopedResourceUrl(new URL(url)), true, url);
+    }
+    for (const url of unscoped) {
+        assert.equal(hooks.isAccountScopedResourceUrl(new URL(url)), false, url);
+    }
+});
+
+test("document and folder deep-links bypass the navigation-type toggles", async () => {
+    const {hooks} = createHarness({
+        settings: {
+            targetSites: ["drive.google.com", "docs.google.com", "mail.google.com", "calendar.google.com"],
+            interceptExternalClicks: false,
+            interceptDirectNavigation: false,
+            interceptGoogleNavigation: false,
+        },
+    });
+
+    const documentDecision = await hooks.getRedirectDecision({
+        url: "https://docs.google.com/document/d/abc123/edit",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 1,
+    });
+    assert.match(documentDecision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    const folderDecision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/folders/14Qj219lJGsuRxkh3oH_2?usp=drive_link",
+        navigationType: "google-navigation",
+        sourceHostname: "mail.google.com",
+        tabId: 4,
+    });
+    assert.match(folderDecision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    const openDecision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/open?id=14Qj219lJGsuRxkh3oH_2",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+        tabId: 5,
+    });
+    assert.match(openDecision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    const markedFolderDecision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/u/1/folders/14Qj219lJGsuRxkh3oH_2",
+        navigationType: "google-navigation",
+        sourceHostname: "mail.google.com",
+        tabId: 6,
+    });
+    assert.equal(markedFolderDecision.redirectUrl, null);
+
+    const threadDecision = await hooks.getRedirectDecision({
+        url: "https://mail.google.com/mail/#inbox/FMfcgzGtwqYbpFyGnDCLZzdVLBrbLDlq",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 7,
+    });
+    assert.match(threadDecision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    const eventDecision = await hooks.getRedirectDecision({
+        url: "https://calendar.google.com/calendar/event?action=VIEW&eid=bXYzdGFza3M",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+        tabId: 8,
+    });
+    assert.match(eventDecision.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+
+    const markedThreadDecision = await hooks.getRedirectDecision({
+        url: "https://mail.google.com/mail/u/0/#inbox/FMfcgzGtwqYbpFyGnDCLZzdVLBrbLDlq",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 9,
+    });
+    assert.equal(markedThreadDecision.redirectUrl, null);
+
+    // Service-level URLs are still gated by the toggles.
+    const serviceDecision = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/my-drive",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 2,
+    });
+    assert.equal(serviceDecision.redirectUrl, null);
+
+    // A document that already names an account keeps skipping the chooser.
+    const markedDecision = await hooks.getRedirectDecision({
+        url: "https://docs.google.com/document/u/1/d/abc123/edit",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 3,
+    });
+    assert.equal(markedDecision.redirectUrl, null);
+});
+
+test("an early commit of the original navigation does not consume the pending redirect", async () => {
+    const harness = createHarness();
+    const {hooks, listeners} = harness;
+    const onCommitted = listeners.onCommitted.at(0);
+    const destination = "https://docs.google.com/document/d/abc123/edit";
+
+    hooks.setPendingRedirect(7, destination, "slack.com", "external-click");
+
+    // The original navigation commits before tabs.update lands on the chooser.
+    await onCommitted({frameId: 0, tabId: 7, url: destination});
+
+    // The pending entry survives, so the real chooser round-trip still captures.
+    await onCommitted({
+        frameId: 0,
+        tabId: 7,
+        url: `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(destination)}`,
+    });
+    await onCommitted({frameId: 0, tabId: 7, url: "https://docs.google.com/document/u/1/d/abc123/edit"});
+
+    const fresh = await sendMessage(harness, {type: "getFreshSuggestion"}, {tab: {id: 7}});
+    assert.equal(fresh.suggestedRule.authuser, "1");
+    assert.equal(fresh.suggestedRule.targetPathPrefix, "/document/d/abc123");
+});
+
+test("a markerless return after visiting the chooser still completes the redirect", async () => {
+    const harness = createHarness();
+    const {hooks, listeners} = harness;
+    const onCommitted = listeners.onCommitted.at(0);
+    const destination = "https://drive.google.com/drive/my-drive";
+
+    hooks.setPendingRedirect(8, destination, null, "direct-navigation");
+    await onCommitted({
+        frameId: 0,
+        tabId: 8,
+        url: `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(destination)}`,
+    });
+    await onCommitted({frameId: 0, tabId: 8, url: destination});
+
+    assert.equal(hooks.isPendingRedirectReturn(8, destination), false);
+    assert.equal(hooks.isCompletedRedirectReturn(8, destination), true);
+});
+
 test("new-tab navigation from an external site routes through the chooser", async () => {
     const {listeners, tabs} = createHarness({
         tabs: {1: {id: 1, url: "https://slack.com/messages"}},

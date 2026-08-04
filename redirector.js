@@ -59,6 +59,15 @@
         if (link.target && link.target !== "_self") return;
         if (link.hasAttribute("download")) return;
 
+        const linkUrl = new URL(link.href);
+        if (
+            linkUrl.origin === location.origin &&
+            linkUrl.pathname === location.pathname &&
+            linkUrl.search === location.search
+        ) {
+            return;
+        }
+
         const sourceHostname = currentSiteHostname;
         const navigationType = isTargetLink(window.location.href) ? "google-navigation" : "external-click";
 
@@ -70,6 +79,7 @@
         });
 
         if (!response?.redirectUrl) return;
+        if (event.defaultPrevented) return;
 
         event.preventDefault();
         location.assign(response.redirectUrl);
@@ -106,7 +116,7 @@
         });
 
         const scope = suggestion.targetPathPrefix
-            ? "this document"
+            ? "this item"
             : suggestion.targetDomain;
         const title = document.createElement("div");
         title.style.fontWeight = "600";

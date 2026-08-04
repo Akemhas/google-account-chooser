@@ -18,6 +18,7 @@ When working with multiple Google accounts, this helps you choose the correct ac
 - optional direct-navigation interception for typed/bookmarked URLs
 - experimental pre-request mode: typed URLs redirect inside the browser before the first request is sent (declarativeNetRequest)
 - optional Google-to-Google interception
+- account-scoped links that name no account and match no saved rule always go through the chooser, whatever the interception toggles say — the extension cannot know which account such a URL belongs to. Covered shapes: documents and files (`/d/<id>`), Drive folders (`/folders/<id>`) and share/download links (`/open?id=`, `/uc?id=`), Gmail threads, Calendar event invites, Photos albums and shares, Meet meeting codes, Chat rooms, Classroom classes, Keep notes, and Firebase/Cloud Console projects
 - preferred-account rules that add `authuser` directly instead of showing chooser whenever they match
 - rules can be edited in place, toggled on/off individually, and given account labels (e.g. "Work" for `authuser=1`)
 - settings export/import (JSON backup) from the options page
