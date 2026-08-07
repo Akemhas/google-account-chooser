@@ -88,11 +88,11 @@
     // After a chooser-based redirect lands here, offer to remember the chosen
     // account for this document with a small top-right prompt (ask mode only —
     // the background answers null in auto mode or when nothing fresh exists).
-    const showSuggestionPrompt = (suggestion) => {
+    const showSuggestionPrompt = (suggestion, existingAuthuser) => {
         const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         const palette = dark
-            ? {bg: "#22242b", text: "#e8eaef", muted: "#a4a9b4", border: "#464a55", accent: "#7d95f0", onAccent: "#0f1320"}
-            : {bg: "#ffffff", text: "#1a1d23", muted: "#555b66", border: "#c9ccd4", accent: "#3555d8", onAccent: "#ffffff"};
+            ? {bg: "#22242b", text: "#e8eaef", muted: "#a4a9b4", border: "#464a55", accent: "#7d95f0", onAccent: "#0f1320", danger: "#f2b8b5"}
+            : {bg: "#ffffff", text: "#1a1d23", muted: "#555b66", border: "#c9ccd4", accent: "#3555d8", onAccent: "#ffffff", danger: "#b3261e"};
 
         const card = document.createElement("div");
         card.setAttribute("role", "dialog");
@@ -120,7 +120,9 @@
             : suggestion.targetDomain;
         const title = document.createElement("div");
         title.style.fontWeight = "600";
-        title.textContent = `Always open ${scope} with account ${suggestion.authuser}?`;
+        title.textContent = existingAuthuser !== null
+            ? `Switch ${scope} from account ${existingAuthuser} to account ${suggestion.authuser}?`
+            : `Always open ${scope} with account ${suggestion.authuser}?`;
 
         const detail = document.createElement("div");
         Object.assign(detail.style, {color: palette.muted, fontSize: "12px", overflowWrap: "anywhere"});
@@ -135,7 +137,7 @@
         };
 
         const dismissBtn = document.createElement("button");
-        dismissBtn.textContent = "Not now";
+        dismissBtn.textContent = "Ask later";
         Object.assign(dismissBtn.style, {
             padding: "5px 10px",
             borderRadius: "8px",
@@ -148,8 +150,35 @@
         });
         dismissBtn.addEventListener("click", remove);
 
+        const neverBtn = document.createElement("button");
+        neverBtn.textContent = "Never";
+        Object.assign(neverBtn.style, {
+            padding: "5px 10px",
+            borderRadius: "8px",
+            border: "1px solid transparent",
+            background: "transparent",
+            color: palette.danger,
+            font: "inherit",
+            fontWeight: "600",
+            cursor: "pointer",
+        });
+        neverBtn.addEventListener("click", async () => {
+            neverBtn.disabled = true;
+
+            try {
+                const response = await chrome.runtime.sendMessage({type: "muteSuggestedRule"});
+                title.textContent = response?.ok ? "Won't ask again for this item" : "Could not update";
+            } catch {
+                title.textContent = "Could not update";
+            }
+
+            detail.remove();
+            actions.remove();
+            setTimeout(remove, 1500);
+        });
+
         const saveBtn = document.createElement("button");
-        saveBtn.textContent = "Save";
+        saveBtn.textContent = existingAuthuser !== null ? "Replace" : "Save";
         Object.assign(saveBtn.style, {
             padding: "5px 12px",
             borderRadius: "8px",
@@ -176,6 +205,7 @@
         });
 
         actions.appendChild(dismissBtn);
+        actions.appendChild(neverBtn);
         actions.appendChild(saveBtn);
         card.appendChild(title);
         card.appendChild(detail);
@@ -189,7 +219,7 @@
         const requestSuggestionPrompt = async () => {
             try {
                 const response = await chrome.runtime.sendMessage({type: "getFreshSuggestion"});
-                if (response?.suggestedRule) showSuggestionPrompt(response.suggestedRule);
+                if (response?.suggestedRule) showSuggestionPrompt(response.suggestedRule, response.existingAuthuser ?? null);
             } catch {
                 // Service worker unreachable — skip the prompt.
             }

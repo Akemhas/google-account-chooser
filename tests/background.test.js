@@ -450,7 +450,7 @@ test("path-specific preferred rules only match the captured document path", asyn
 
     assert.equal(
         matchingDecision.redirectUrl,
-        "https://docs.google.com/document/u/0/d/abc123/edit?authuser=1"
+        "https://docs.google.com/document/u/1/d/abc123/edit?authuser=1"
     );
     assert.equal(
         nonMatchingDecision.redirectUrl,
@@ -475,7 +475,8 @@ test("chooser return with authuser becomes a suggested rule on commit", async ()
 
     assert.equal(response.suggestedRule.targetDomain, "drive.google.com");
     assert.equal(response.suggestedRule.targetPathPrefix, "/drive/my-drive");
-    assert.equal(response.suggestedRule.sourceDomain, "slack.com");
+    // Suggestions are source-agnostic: a saved document rule applies from anywhere.
+    assert.equal(response.suggestedRule.sourceDomain, "");
     assert.equal(response.suggestedRule.authuser, "1");
     assert.equal(typeof response.suggestedRule.createdAt, "number");
 });
@@ -497,7 +498,7 @@ test("chooser return with only a /u/N/ path yields a suggestion with a trimmed p
 
     assert.equal(response.suggestedRule.authuser, "2");
     assert.equal(response.suggestedRule.targetPathPrefix, "/document/d/abc123");
-    assert.equal(response.suggestedRule.sourceDomain, "slack.com");
+    assert.equal(response.suggestedRule.sourceDomain, "");
 });
 
 test("isAccountScopedResourceUrl recognizes account-scoped shapes across services", () => {
@@ -670,6 +671,48 @@ test("a markerless return after visiting the chooser still completes the redirec
 
     assert.equal(hooks.isPendingRedirectReturn(8, destination), false);
     assert.equal(hooks.isCompletedRedirectReturn(8, destination), true);
+});
+
+test("with account trust off, marked links still ask unless a rule covers them", async () => {
+    const {hooks} = createHarness({
+        settings: {skipIfAccountSpecified: false},
+    });
+
+    const unsaved = await hooks.getRedirectDecision({
+        url: "https://docs.google.com/document/u/0/d/abc123/edit",
+        navigationType: "external-click",
+        sourceHostname: "slack.com",
+        tabId: 1,
+    });
+    assert.match(unsaved.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+});
+
+test("a rule matching the link's own account is a no-op instead of a redirect hop", async () => {
+    const {hooks} = createHarness({
+        settings: {
+            skipIfAccountSpecified: false,
+            preferredAccountRules: [
+                {targetDomain: "docs.google.com", targetPathPrefix: "/document/d/abc123", sourceDomain: "", authuser: "1"},
+            ],
+        },
+    });
+
+    const sameAccount = await hooks.getRedirectDecision({
+        url: "https://docs.google.com/document/u/1/d/abc123/edit",
+        navigationType: "external-click",
+        sourceHostname: "slack.com",
+        tabId: 1,
+    });
+    assert.equal(sameAccount.redirectUrl, null);
+
+    // A conflicting /u/N segment is rewritten, not just supplemented.
+    const otherAccount = await hooks.getRedirectDecision({
+        url: "https://docs.google.com/document/u/0/d/abc123/edit",
+        navigationType: "external-click",
+        sourceHostname: "slack.com",
+        tabId: 2,
+    });
+    assert.equal(otherAccount.redirectUrl, "https://docs.google.com/document/u/1/d/abc123/edit?authuser=1");
 });
 
 test("new-tab navigation from an external site routes through the chooser", async () => {
@@ -1072,7 +1115,7 @@ test("auto mode saves document rules directly instead of suggesting", async () =
     const rule = settings.preferredAccountRules[0];
     assert.equal(rule.targetDomain, "docs.google.com");
     assert.equal(rule.targetPathPrefix, "/document/d/abc");
-    assert.equal(rule.sourceDomain, "slack.com");
+    assert.equal(rule.sourceDomain, "");
     assert.equal(rule.authuser, "1");
     assert.equal(typeof rule.id, "string");
 
@@ -1142,6 +1185,143 @@ test("savePageSuggestedRule saves, consumes, and clears the badge", async () => 
     assert.equal(settings.preferredAccountRules.length, 1);
     assert.equal(settings.preferredAccountRules[0].targetPathPrefix, "/document/d/abc");
     assert.equal(badgeTextByTab.get(9), "");
+
+    const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(popupView.suggestedRule, null);
+});
+
+test("a new tab's content script inherits the recorded navigation context", async () => {
+    const harness = createHarness({
+        settings: {interceptDirectNavigation: true},
+        tabs: {1: {id: 1, url: "https://drive.google.com/drive/u/0/home"}},
+    });
+
+    await harness.listeners.onCreatedNavigationTarget.at(0)({
+        sourceTabId: 1,
+        tabId: 2,
+        url: "https://drive.google.com/drive/shared-with-me",
+    });
+    assert.equal(harness.tabs.has(2), false);
+
+    // The content script's direct-navigation guess must not bypass the
+    // google-navigation gate the background already applied to this tab.
+    const decision = await sendMessage(harness, {
+        type: "getRedirectUrl",
+        url: "https://drive.google.com/drive/shared-with-me",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+    }, {tab: {id: 2}});
+    assert.equal(decision.redirectUrl, null);
+
+    // A tab without a recorded context still intercepts as direct navigation.
+    const unrelated = await sendMessage(harness, {
+        type: "getRedirectUrl",
+        url: "https://drive.google.com/drive/shared-with-me",
+        navigationType: "direct-navigation",
+        sourceHostname: null,
+    }, {tab: {id: 9}});
+    assert.match(unrelated.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+});
+
+test("same-service navigation that names an account never asks", async () => {
+    const {hooks} = createHarness({
+        settings: {skipIfAccountSpecified: false, interceptGoogleNavigation: true},
+    });
+
+    // The avatar account switcher: Drive linking to itself with /u/1/.
+    const accountSwitch = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/u/1/home",
+        navigationType: "google-navigation",
+        sourceHostname: "drive.google.com",
+        tabId: 1,
+    });
+    assert.equal(accountSwitch.redirectUrl, null);
+
+    // A marked link arriving from a different service still asks in strict mode.
+    const crossService = await hooks.getRedirectDecision({
+        url: "https://drive.google.com/drive/u/1/home",
+        navigationType: "google-navigation",
+        sourceHostname: "docs.google.com",
+        tabId: 2,
+    });
+    assert.match(crossService.redirectUrl, /^https:\/\/accounts\.google\.com\/AccountChooser/);
+});
+
+test("savePreferredRule upserts by key instead of stacking conflicting rules", async () => {
+    const harness = createHarness({
+        settings: {autoSaveSuggestedRules: true},
+    });
+    const {hooks, listeners, settings} = harness;
+    const onCommitted = listeners.onCommitted.at(0);
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", "slack.com", "external-click");
+    await onCommitted({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/1/d/abc/edit"});
+    assert.equal(settings.preferredAccountRules.length, 1);
+    assert.equal(settings.preferredAccountRules[0].authuser, "1");
+    const originalId = settings.preferredAccountRules[0].id;
+
+    // Same document, different account: the value is replaced, not duplicated.
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", "slack.com", "external-click");
+    await onCommitted({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/2/d/abc/edit"});
+    assert.equal(settings.preferredAccountRules.length, 1);
+    assert.equal(settings.preferredAccountRules[0].authuser, "2");
+    assert.equal(settings.preferredAccountRules[0].id, originalId);
+});
+
+test("a suggestion already covered by an identical rule is not offered again", async () => {
+    const harness = createHarness({
+        settings: {
+            preferredAccountRules: [
+                {id: "r1", targetDomain: "docs.google.com", targetPathPrefix: "/document/d/abc", sourceDomain: "", authuser: "1"},
+            ],
+        },
+    });
+    const {hooks, listeners, badgeTextByTab} = harness;
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", null, "external-click");
+    await listeners.onCommitted.at(0)({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/1/d/abc/edit"});
+
+    const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
+    assert.equal(popupView.suggestedRule, null);
+    assert.equal(badgeTextByTab.get(9), "");
+});
+
+test("a fresh suggestion reports the conflicting saved account", async () => {
+    const harness = createHarness({
+        settings: {
+            preferredAccountRules: [
+                {id: "r1", targetDomain: "docs.google.com", targetPathPrefix: "/document/d/abc", sourceDomain: "", authuser: "0"},
+            ],
+        },
+    });
+    const {hooks, listeners} = harness;
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", null, "external-click");
+    await listeners.onCommitted.at(0)({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/1/d/abc/edit"});
+
+    const fresh = await sendMessage(harness, {type: "getFreshSuggestion"}, {tab: {id: 9}});
+    assert.equal(fresh.suggestedRule.authuser, "1");
+    assert.equal(fresh.existingAuthuser, "0");
+});
+
+test("muteSuggestedRule stores the target and suppresses future suggestions", async () => {
+    const harness = createHarness();
+    const {hooks, listeners, settings, badgeTextByTab} = harness;
+    const onCommitted = listeners.onCommitted.at(0);
+
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", null, "external-click");
+    await onCommitted({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/1/d/abc/edit"});
+
+    const response = await sendMessage(harness, {type: "muteSuggestedRule"}, {tab: {id: 9}});
+    assert.equal(response.ok, true);
+    assert.deepEqual(settings.mutedSuggestions, [
+        {targetDomain: "docs.google.com", targetPathPrefix: "/document/d/abc"},
+    ]);
+    assert.equal(badgeTextByTab.get(9), "");
+
+    // The next chooser round-trip for the muted target stays silent.
+    hooks.setPendingRedirect(9, "https://docs.google.com/document/d/abc/edit", null, "external-click");
+    await onCommitted({frameId: 0, tabId: 9, url: "https://docs.google.com/document/u/2/d/abc/edit"});
 
     const popupView = await sendMessage(harness, {type: "getSuggestedRule", tabId: 9});
     assert.equal(popupView.suggestedRule, null);

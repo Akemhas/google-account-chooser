@@ -17,6 +17,12 @@
 </header>
 
 <main id="gated-content" class="popup-content">
+    <nav class="popup-tabs" role="tablist" aria-label="Popup sections">
+        <button class="popup-tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" data-panel="overview">Overview</button>
+        <button class="popup-tab" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-panel="history" tabindex="-1">History</button>
+    </nav>
+
+    <section class="popup-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
     <section class="card" id="context-card" aria-label="Current page">
         <div class="context-row">
             <div class="context-text">
@@ -39,7 +45,7 @@
         <div class="card-title">Redirect Behavior</div>
         <div class="toggle-list">
             <label class="toggle-row">
-                <span class="toggle-copy">Skip chooser when URL already picks an account</span>
+                <span class="toggle-copy">Trust the account already in the link</span>
                 <span class="switch">
                     <input type="checkbox" id="skipIfAccountSpecified" checked>
                     <span class="switch-track"></span>
@@ -81,7 +87,18 @@
                 </span>
             </label>
         </div>
-        <p class="section-note">Documents, folders, and other account-specific links that name no account and match no rule always ask, whatever the toggles say. When saving without asking is off, a small prompt on the page asks before a document rule is saved.</p>
+    </section>
+    </section>
+
+    <section class="popup-panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+        <section class="card" aria-label="Saved trusted links">
+            <div class="card-head">
+                <div class="card-title">Trusted Links</div>
+                <button class="btn btn-danger-ghost" id="clearHistoryBtn" hidden>Remove all</button>
+            </div>
+            <div class="card-copy">Saved links open with their account automatically. Pause, change the account, or remove them here — full editing lives in Manage rules &amp; sites.</div>
+            <div class="history-list" id="historyList" role="list" aria-label="Saved account rules"></div>
+        </section>
     </section>
 </main>
 

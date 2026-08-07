@@ -124,6 +124,7 @@ globalThis.buildSettingsExport = globalThis.buildSettingsExport || ((settings, a
         interceptGoogleNavigation: settings.interceptGoogleNavigation,
         preferredAccountRules: settings.preferredAccountRules,
         accountLabels: settings.accountLabels,
+        mutedSuggestions: settings.mutedSuggestions,
     },
 }));
 
@@ -219,6 +220,25 @@ globalThis.validateImport = globalThis.validateImport || ((payload) => {
         }
 
         settings.preferredAccountRules = rules;
+    }
+
+    if ("mutedSuggestions" in raw) {
+        const muted = [];
+
+        for (const entry of Array.isArray(raw.mutedSuggestions) ? raw.mutedSuggestions : []) {
+            const targetDomain = typeof entry?.targetDomain === "string" ? sanitizeDomainInput(entry.targetDomain) : "";
+
+            if (!targetDomain || !isValidDomain(targetDomain) || typeof entry.targetPathPrefix !== "string") {
+                report.skipped += 1;
+                report.reasons.push(`muted entry dropped: ${JSON.stringify(entry).slice(0, 80)}`);
+                continue;
+            }
+
+            muted.push({targetDomain, targetPathPrefix: sanitizePathPrefixInput(entry.targetPathPrefix)});
+            report.imported += 1;
+        }
+
+        settings.mutedSuggestions = muted;
     }
 
     if ("accountLabels" in raw) {

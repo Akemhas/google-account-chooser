@@ -12,6 +12,7 @@ When working with multiple Google accounts, this helps you choose the correct ac
 
 - global enable/disable toggle
 - popup shows the current site's status with one-click exclude/un-exclude
+- popup History tab lists the saved trusted links — pause, change the account, or remove them (one by one or all at once) without opening the options page
 - full options page for managing rules and site lists, with automatic dark mode
 - configurable target Google domains
 - excluded source domains where click interception should not run
@@ -20,15 +21,17 @@ When working with multiple Google accounts, this helps you choose the correct ac
 - optional Google-to-Google interception
 - account-scoped links that name no account and match no saved rule always go through the chooser, whatever the interception toggles say — the extension cannot know which account such a URL belongs to. Covered shapes: documents and files (`/d/<id>`), Drive folders (`/folders/<id>`) and share/download links (`/open?id=`, `/uc?id=`), Gmail threads, Calendar event invites, Photos albums and shares, Meet meeting codes, Chat rooms, Classroom classes, Keep notes, and Firebase/Cloud Console projects
 - preferred-account rules that add `authuser` directly instead of showing chooser whenever they match
-- rules can be edited in place, toggled on/off individually, and given account labels (e.g. "Work" for `authuser=1`)
+- rules can be edited in place, toggled on/off individually, removed one by one or all at once, and given account labels (e.g. "Work" for `authuser=1`)
 - settings export/import (JSON backup) from the options page
 - suggested account rule capture after chooser-based redirects, with one-click saving from the popup
-- after picking an account for a document, a small on-page prompt offers to remember it — or flip one setting to save document rules automatically without asking
+- after picking an account for a document, a small on-page prompt offers to remember it ("Ask later" / "Never" / "Save") — or flip one setting to save document rules automatically without asking; "Never" entries are managed in the options "Never Ask Again" list
+- saved rules behave as a dictionary (one account per target): exact duplicates are rejected, and saving the same target with a different account asks before replacing it
+- account-switcher links (a Google app linking to itself with `/u/N/`) are never intercepted — switching accounts inside an app is an explicit choice
 - manual light/dark theme override (defaults to matching the system)
 - links that open in a new tab (`target=_blank`, middle-click) are intercepted too
 - toolbar badge: "1" when a rule suggestion is waiting for the current tab, "OFF" when disabled
 - keyboard shortcut to toggle the extension (default `Alt+Shift+G`, rebindable at `chrome://extensions/shortcuts`)
-- page reloads and back/forward navigations are never intercepted, and URLs that already name an account (`authuser` or `/u/N/`) open directly
+- page reloads and back/forward navigations are never intercepted; URLs that already name an account (`authuser` or `/u/N/`) open directly while "Trust the account already in the link" is on — turn it off to ask for those links too until they are saved as rules
 
 ## Stored Settings
 

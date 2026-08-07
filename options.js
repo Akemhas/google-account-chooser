@@ -8,7 +8,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const quotaWarning = document.getElementById("quotaWarning");
     const savedDocumentRulesList = document.getElementById("savedDocumentRulesList");
     const preferredRulesList = document.getElementById("preferredRulesList");
+    const clearDocumentRulesBtn = document.getElementById("clearDocumentRulesBtn");
+    const clearServiceRulesBtn = document.getElementById("clearServiceRulesBtn");
     const accountLabelsList = document.getElementById("accountLabelsList");
+    const mutedSuggestionsList = document.getElementById("mutedSuggestionsList");
+    const clearMutedBtn = document.getElementById("clearMutedBtn");
     const rulePresetGrid = document.getElementById("rulePresetGrid");
     const ruleBuilderTitle = document.getElementById("ruleBuilderTitle");
     const preferredTargetInput = document.getElementById("preferredTargetInput");
@@ -206,6 +210,73 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     };
 
+    const renderMutedSuggestions = () => {
+        mutedSuggestionsList.innerHTML = "";
+
+        const entries = settings.mutedSuggestions;
+        clearMutedBtn.hidden = !entries.length;
+
+        if (!entries.length) {
+            mutedSuggestionsList.appendChild(createEmptyState("Nothing here. Choosing \"Never\" on the on-page save prompt adds entries."));
+            return;
+        }
+
+        for (const entry of [...entries].sort((a, b) =>
+            a.targetDomain.localeCompare(b.targetDomain) ||
+            (a.targetPathPrefix ?? "").localeCompare(b.targetPathPrefix ?? ""))) {
+            const container = document.createElement("div");
+            container.className = "list-item";
+            container.setAttribute("role", "listitem");
+
+            const inner = document.createElement("div");
+            inner.className = "list-item-inner";
+
+            const name = document.createElement("span");
+            name.className = "item-name";
+            name.textContent = `${entry.targetDomain}${entry.targetPathPrefix ?? ""}`;
+
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "btn btn-danger-ghost";
+            removeBtn.textContent = "Remove";
+            removeBtn.setAttribute("aria-label", `Remove never-ask entry for ${entry.targetDomain}${entry.targetPathPrefix ?? ""}`);
+            removeBtn.addEventListener("click", async () => {
+                const previous = settings.mutedSuggestions;
+                settings.mutedSuggestions = previous.filter((item) => item !== entry);
+
+                try {
+                    await saveSettings({mutedSuggestions: settings.mutedSuggestions});
+                    renderMutedSuggestions();
+                    showToast("Entry removed");
+                } catch (error) {
+                    settings.mutedSuggestions = previous;
+                    showToast(error.message, {variant: "error"});
+                }
+            });
+
+            inner.appendChild(name);
+            inner.appendChild(removeBtn);
+            container.appendChild(inner);
+            mutedSuggestionsList.appendChild(container);
+        }
+    };
+
+    clearMutedBtn.addEventListener("click", async () => {
+        if (!settings.mutedSuggestions.length) return;
+        if (!confirm("Remove all never-ask entries?")) return;
+
+        const previous = settings.mutedSuggestions;
+        settings.mutedSuggestions = [];
+
+        try {
+            await saveSettings({mutedSuggestions: settings.mutedSuggestions});
+            renderMutedSuggestions();
+            showToast(`${previous.length} entries removed`);
+        } catch (error) {
+            settings.mutedSuggestions = previous;
+            showToast(error.message, {variant: "error"});
+        }
+    });
+
     const renderRules = () => {
         savedDocumentRulesList.innerHTML = "";
         preferredRulesList.innerHTML = "";
@@ -220,6 +291,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             const list = rule.targetPathPrefix ? savedDocumentRulesList : preferredRulesList;
             list.appendChild(createRuleItem(rule));
         }
+
+        clearDocumentRulesBtn.hidden = !sorted.some((rule) => rule.targetPathPrefix);
+        clearServiceRulesBtn.hidden = !sorted.some((rule) => !rule.targetPathPrefix);
 
         if (!savedDocumentRulesList.children.length) {
             savedDocumentRulesList.appendChild(createEmptyState("No document-specific rules saved yet."));
@@ -286,6 +360,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         preferredLabelInput.value = settings.accountLabels[rule.authuser] ?? "";
         preferredTargetInput.focus();
     };
+
+    const clearRules = async (shouldRemove, confirmMessage) => {
+        const previous = settings.preferredAccountRules;
+        const remaining = previous.filter((rule) => !shouldRemove(rule));
+        if (remaining.length === previous.length) return;
+        if (!confirm(confirmMessage)) return;
+
+        if (editingRuleId && !remaining.some((rule) => rule.id === editingRuleId)) {
+            exitEditMode();
+        }
+        settings.preferredAccountRules = remaining;
+
+        try {
+            await persistSettings();
+            renderRules();
+            showToast(`${previous.length - remaining.length} rules removed`);
+        } catch (error) {
+            settings.preferredAccountRules = previous;
+            showToast(error.message, {variant: "error"});
+        }
+    };
+
+    clearDocumentRulesBtn.addEventListener("click", () => clearRules(
+        (rule) => Boolean(rule.targetPathPrefix),
+        "Remove all saved document rules? This cannot be undone."
+    ));
+    clearServiceRulesBtn.addEventListener("click", () => clearRules(
+        (rule) => !rule.targetPathPrefix,
+        "Remove all service-wide rules? This cannot be undone."
+    ));
 
     const toggleRuleEnabled = async (ruleId, isEnabled) => {
         const previous = settings.preferredAccountRules;
@@ -365,19 +469,47 @@ document.addEventListener("DOMContentLoaded", async () => {
             authuser,
         };
 
-        const duplicate = settings.preferredAccountRules.some((rule) =>
-            rule.id !== candidate.id && rulesAreEquivalent(rule, candidate));
-        if (duplicate) {
-            showToast("That rule already exists", {variant: "error"});
-            return;
-        }
+        // Rules behave as a dictionary: (targetDomain, targetPathPrefix, sourceDomain) → authuser.
+        const collider = settings.preferredAccountRules.find((rule) =>
+            rule.id !== candidate.id &&
+            rule.targetDomain === targetDomain &&
+            (rule.targetPathPrefix ?? "") === targetPathPrefix &&
+            (rule.sourceDomain ?? "") === sourceDomain);
 
         const previousRules = settings.preferredAccountRules;
         const previousLabels = {...settings.accountLabels};
+        let nextRules;
+        let successMessage;
 
-        settings.preferredAccountRules = existing
-            ? previousRules.map((rule) => (rule.id === candidate.id ? candidate : rule))
-            : [...previousRules, candidate];
+        if (collider && collider.authuser === authuser) {
+            if (!existing) {
+                showToast("That rule already exists", {variant: "error"});
+                return;
+            }
+            // Editing turned this rule into a copy of another: apply the edit, drop the copy.
+            nextRules = previousRules
+                .filter((rule) => rule.id !== collider.id)
+                .map((rule) => (rule.id === candidate.id ? candidate : rule));
+            successMessage = "Merged with the existing identical rule";
+        } else if (collider) {
+            const keyDescription = `${targetDomain}${targetPathPrefix}${sourceDomain ? ` (from ${sourceDomain})` : ""}`;
+            if (!confirm(`A rule for ${keyDescription} already opens with account ${collider.authuser}. Replace it with account ${authuser}?`)) {
+                return;
+            }
+            nextRules = existing
+                ? previousRules
+                    .filter((rule) => rule.id !== collider.id)
+                    .map((rule) => (rule.id === candidate.id ? candidate : rule))
+                : previousRules.map((rule) => (rule.id === collider.id ? {...rule, authuser} : rule));
+            successMessage = "Rule updated";
+        } else {
+            nextRules = existing
+                ? previousRules.map((rule) => (rule.id === candidate.id ? candidate : rule))
+                : [...previousRules, candidate];
+            successMessage = existing ? "Rule updated" : "Rule saved";
+        }
+
+        settings.preferredAccountRules = nextRules;
         if (label) {
             settings.accountLabels = {...settings.accountLabels, [authuser]: label};
         }
@@ -386,7 +518,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             await persistSettings();
             exitEditMode();
             renderRules();
-            showToast(existing ? "Rule updated" : "Rule saved");
+            showToast(successMessage);
         } catch (error) {
             settings.preferredAccountRules = previousRules;
             settings.accountLabels = previousLabels;
@@ -581,6 +713,16 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (imported.accountLabels) {
                 next.accountLabels = {...settings.accountLabels, ...imported.accountLabels};
             }
+            if (imported.mutedSuggestions) {
+                const merged = [...settings.mutedSuggestions];
+                for (const entry of imported.mutedSuggestions) {
+                    if (merged.some((existing) =>
+                        existing.targetDomain === entry.targetDomain &&
+                        (existing.targetPathPrefix ?? "") === (entry.targetPathPrefix ?? ""))) continue;
+                    merged.push(entry);
+                }
+                next.mutedSuggestions = merged;
+            }
         }
 
         const prior = settings;
@@ -598,11 +740,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 interceptGoogleNavigation: settings.interceptGoogleNavigation,
                 preferredAccountRules: settings.preferredAccountRules,
                 accountLabels: settings.accountLabels,
+                mutedSuggestions: settings.mutedSuggestions,
             });
             exitEditMode();
             renderRules();
             renderTargets();
             renderExcluded();
+            renderMutedSuggestions();
 
             const {report} = validated;
             showToast(report.skipped
@@ -629,4 +773,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderRules();
     renderTargets();
     renderExcluded();
+    renderMutedSuggestions();
 });

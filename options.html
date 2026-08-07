@@ -33,15 +33,30 @@
             </div>
 
             <section class="card">
-                <div class="card-title">Saved Documents</div>
+                <div class="card-head">
+                    <div class="card-title">Saved Documents</div>
+                    <button class="btn btn-danger-ghost" id="clearDocumentRulesBtn" hidden>Remove all</button>
+                </div>
                 <div class="card-copy">Document-specific rules, usually saved from chooser suggestions.</div>
                 <div class="rule-list" id="savedDocumentRulesList" role="list" aria-label="Saved document rules"></div>
             </section>
 
             <section class="card">
-                <div class="card-title">Service Rules</div>
+                <div class="card-head">
+                    <div class="card-title">Service Rules</div>
+                    <button class="btn btn-danger-ghost" id="clearServiceRulesBtn" hidden>Remove all</button>
+                </div>
                 <div class="card-copy">Rules that apply to a whole Google service.</div>
                 <div class="rule-list" id="preferredRulesList" role="list" aria-label="Service-wide rules"></div>
+            </section>
+
+            <section class="card">
+                <div class="card-head">
+                    <div class="card-title">Never Ask Again</div>
+                    <button class="btn btn-danger-ghost" id="clearMutedBtn" hidden>Remove all</button>
+                </div>
+                <div class="card-copy">Links where you chose "Never" on the save prompt. The chooser still works there; the extension just stops offering to save a rule. Remove an entry to get prompts again.</div>
+                <div class="rule-list" id="mutedSuggestionsList" role="list" aria-label="Never-ask entries"></div>
             </section>
 
             <section class="card">

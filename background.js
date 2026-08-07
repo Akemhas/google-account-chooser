@@ -12,7 +12,9 @@ const DNR_RULE_ID_BASE = 1000;
 const ALLOW_RULE_ID_BASE = 500000;
 const ALLOW_RULE_TTL_MS = 10 * 1000;
 const NAVIGATION_CONTEXT_TTL_MS = 30 * 1000;
+const CREATED_TAB_CONTEXT_TTL_MS = 10 * 1000;
 const lastNavigationContextByTab = new Map();
+const createdTabContextByTab = new Map();
 const allowRuleTimersByTab = new Map();
 const pendingRedirectsByTab = new Map();
 const completedRedirectsByTab = new Map();
@@ -111,6 +113,14 @@ function hasExplicitAccount(url) {
     return url.searchParams.has("authuser") || /\/u\/\d+(\/|$)/.test(url.pathname);
 }
 
+function getExplicitAccount(url) {
+    return (
+        url.searchParams.get("authuser")?.trim() ||
+        url.pathname.match(/\/u\/(\d+)(?:\/|$)/)?.[1] ||
+        null
+    );
+}
+
 // URL shapes that point at an account-scoped resource. These always route
 // through the chooser (bypassing the navigation-type toggles) when they name
 // no account and match no rule — the extension cannot guess the account.
@@ -195,6 +205,18 @@ function cleanupAllExpiredState() {
     ].some(Boolean);
 
     if (removed) persistSessionState();
+}
+
+function getCreatedTabContext(tabId) {
+    const context = createdTabContextByTab.get(tabId);
+    if (!context) return null;
+
+    if (Date.now() - context.createdAt > CREATED_TAB_CONTEXT_TTL_MS) {
+        createdTabContextByTab.delete(tabId);
+        return null;
+    }
+
+    return context;
 }
 
 async function resetRuntimeState() {
@@ -359,17 +381,20 @@ function applyPreferredAccount(rawUrl, authuser) {
     const parsedUrl = parseUrl(rawUrl);
     if (!parsedUrl) return null;
 
+    // A /u/N path segment outranks the authuser param on most Google services,
+    // so a conflicting one must be rewritten, not just supplemented.
+    if (/^\d+$/.test(authuser)) {
+        parsedUrl.pathname = parsedUrl.pathname.replace(/\/u\/\d+(?=\/|$)/g, `/u/${authuser}`);
+    }
     parsedUrl.searchParams.set("authuser", authuser);
     return parsedUrl.toString();
 }
 
-function createSuggestedRuleFromUrl(rawUrl, sourceHostname) {
+function createSuggestedRuleFromUrl(rawUrl) {
     const parsedUrl = parseUrl(rawUrl);
     if (!parsedUrl) return null;
 
-    const authuser =
-        parsedUrl.searchParams.get("authuser")?.trim() ||
-        parsedUrl.pathname.match(/\/u\/(\d+)(?:\/|$)/)?.[1];
+    const authuser = getExplicitAccount(parsedUrl);
     if (!authuser) return null;
 
     // Drop trailing action segments so the rule matches /edit, /view, etc. alike,
@@ -381,7 +406,7 @@ function createSuggestedRuleFromUrl(rawUrl, sourceHostname) {
     return {
         targetDomain: parsedUrl.hostname.toLowerCase(),
         targetPathPrefix,
-        sourceDomain: sourceHostname ? sourceHostname.toLowerCase() : "",
+        sourceDomain: "",
         authuser,
         createdAt: Date.now(),
     };
@@ -411,6 +436,14 @@ async function getBestEffortNavigationContext(tabId, targetUrl) {
             return {
                 navigationType: "reload",
                 sourceHostname: null,
+            };
+        }
+
+        const created = getCreatedTabContext(tabId);
+        if (created) {
+            return {
+                navigationType: created.navigationType,
+                sourceHostname: created.sourceHostname,
             };
         }
 
@@ -444,6 +477,12 @@ async function getRedirectDecision({url, navigationType, sourceHostname, tabId})
     if (!isTargetUrl(parsedUrl, settings.targetSites)) return {redirectUrl: null};
     if (isAccountChooserUrl(parsedUrl)) return {redirectUrl: null};
     if (settings.skipIfAccountSpecified && hasExplicitAccount(parsedUrl)) return {redirectUrl: null};
+    // A same-service navigation that names an account is the app itself
+    // switching or deep-linking accounts (e.g. the avatar account switcher) —
+    // that choice is explicit, so never ask or rewrite it.
+    if (hasExplicitAccount(parsedUrl) && sourceHostname === parsedUrl.hostname) {
+        return {redirectUrl: null};
+    }
     if (
         typeof tabId === "number" &&
         (
@@ -466,6 +505,7 @@ async function getRedirectDecision({url, navigationType, sourceHostname, tabId})
     });
 
     if (preferredRule) {
+        if (getExplicitAccount(parsedUrl) === preferredRule.authuser) return {redirectUrl: null};
         const rewrittenUrl = applyPreferredAccount(url, preferredRule.authuser);
         if (!rewrittenUrl || rewrittenUrl === parsedUrl.toString()) return {redirectUrl: null};
         return {redirectUrl: rewrittenUrl};
@@ -737,6 +777,11 @@ async function handleCreatedNavigationTarget(details) {
 
     const {navigationType, sourceHostname} = await classifyNewTabSource(details.sourceTabId, settings);
 
+    // The new tab's content script can't see how the tab was created and will
+    // guess "direct-navigation"; remember the real context so it isn't gated
+    // (or intercepted) under the wrong navigation type.
+    createdTabContextByTab.set(details.tabId, {navigationType, sourceHostname, createdAt: Date.now()});
+
     const {redirectUrl} = await getRedirectDecision({
         url: details.url,
         navigationType,
@@ -795,10 +840,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "getRedirectUrl") {
         const tabId = sender.tab?.id ?? message.tabId;
 
+        let {navigationType, sourceHostname} = message;
+        if (navigationType === "direct-navigation" && typeof tabId === "number") {
+            const created = getCreatedTabContext(tabId);
+            if (created) ({navigationType, sourceHostname} = created);
+        }
+
         getRedirectDecision({
             url: message.url,
-            navigationType: message.navigationType,
-            sourceHostname: message.sourceHostname,
+            navigationType,
+            sourceHostname,
             tabId,
         })
             .then(sendResponse)
@@ -860,7 +911,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 suggestion.offered = true;
                 persistSessionState();
-                sendResponse({suggestedRule: suggestion});
+                const existingRule = settings.preferredAccountRules.find((rule) => ruleKeyMatches(rule, suggestion));
+                sendResponse({
+                    suggestedRule: suggestion,
+                    existingAuthuser: existingRule && existingRule.authuser !== suggestion.authuser ? existingRule.authuser : null,
+                });
             })
             .catch((error) => {
                 console.error("Failed to fetch fresh suggestion:", error);
@@ -894,6 +949,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message?.type === "muteSuggestedRule") {
+        const tabId = sender.tab?.id ?? -1;
+
+        ensureSessionStateLoaded()
+            .then(async () => {
+                const suggestion = suggestedRulesByTab.get(tabId);
+                if (!suggestion) {
+                    sendResponse({ok: false});
+                    return;
+                }
+
+                const settings = await getSettings();
+                const entry = {
+                    targetDomain: suggestion.targetDomain,
+                    targetPathPrefix: suggestion.targetPathPrefix ?? "",
+                };
+                const alreadyMuted = settings.mutedSuggestions.some((muted) =>
+                    muted.targetDomain === entry.targetDomain &&
+                    (muted.targetPathPrefix ?? "") === entry.targetPathPrefix);
+
+                if (!alreadyMuted) {
+                    await chrome.storage.sync.set({
+                        mutedSuggestions: [...settings.mutedSuggestions, entry],
+                    });
+                }
+
+                if (suggestedRulesByTab.delete(tabId)) persistSessionState();
+                updateSuggestionBadge(tabId);
+                sendResponse({ok: true});
+            })
+            .catch((error) => {
+                console.error("Failed to mute suggested rule:", error);
+                sendResponse({ok: false});
+            });
+
+        return true;
+    }
+
     if (message?.type === "consumeSuggestedRule") {
         ensureSessionStateLoaded()
             .then(() => {
@@ -918,11 +1011,28 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) =>
     })
 );
 
+function ruleKeyMatches(a, b) {
+    return a.targetDomain === b.targetDomain &&
+        (a.targetPathPrefix ?? "") === (b.targetPathPrefix ?? "") &&
+        (a.sourceDomain ?? "") === (b.sourceDomain ?? "");
+}
+
 async function savePreferredRule(rule) {
     const settings = await getSettings();
 
-    if (settings.preferredAccountRules.some((existing) => rulesAreEquivalent(existing, rule))) {
-        return false;
+    const existing = settings.preferredAccountRules.find((candidate) => ruleKeyMatches(candidate, rule));
+    if (existing) {
+        if (existing.authuser === rule.authuser) return false;
+
+        // Dictionary semantics: the same target key maps to one account, so a
+        // new account overwrites the old rule instead of stacking a duplicate.
+        await chrome.storage.sync.set({
+            preferredAccountRules: settings.preferredAccountRules.map((candidate) =>
+                candidate === existing ? {...candidate, authuser: rule.authuser} : candidate
+            ),
+        });
+
+        return true;
     }
 
     await chrome.storage.sync.set({
@@ -959,7 +1069,7 @@ async function handleCommittedNavigation(details) {
     }
 
     if (pendingRedirect && isPendingRedirectReturn(details.tabId, details.url)) {
-        const suggestedRule = createSuggestedRuleFromUrl(details.url, pendingRedirect.sourceHostname);
+        const suggestedRule = createSuggestedRuleFromUrl(details.url);
 
         // A markerless commit on the destination before the tab has been to the
         // chooser is the original navigation winning the race against our own
@@ -967,18 +1077,25 @@ async function handleCommittedNavigation(details) {
         if (suggestedRule || pendingRedirect.chooserVisited) {
             if (suggestedRule) {
                 const settings = await getSettings();
+                const isMuted = settings.mutedSuggestions.some((muted) =>
+                    muted.targetDomain === suggestedRule.targetDomain &&
+                    (muted.targetPathPrefix ?? "") === (suggestedRule.targetPathPrefix ?? ""));
+                const existingRule = settings.preferredAccountRules.find((rule) => ruleKeyMatches(rule, suggestedRule));
+                const alreadyCovered = existingRule?.authuser === suggestedRule.authuser;
 
-                // Auto mode saves document-specific rules outright; service-wide
-                // suggestions are too broad to save unasked and stay suggestions.
-                if (settings.autoSaveSuggestedRules && suggestedRule.targetPathPrefix) {
-                    try {
-                        await savePreferredRule(suggestedRule);
-                    } catch (error) {
-                        console.error("Failed to auto-save suggested rule:", error);
+                if (!isMuted && !alreadyCovered) {
+                    // Auto mode saves document-specific rules outright; service-wide
+                    // suggestions are too broad to save unasked and stay suggestions.
+                    if (settings.autoSaveSuggestedRules && suggestedRule.targetPathPrefix) {
+                        try {
+                            await savePreferredRule(suggestedRule);
+                        } catch (error) {
+                            console.error("Failed to auto-save suggested rule:", error);
+                            suggestedRulesByTab.set(details.tabId, suggestedRule);
+                        }
+                    } else {
                         suggestedRulesByTab.set(details.tabId, suggestedRule);
                     }
-                } else {
-                    suggestedRulesByTab.set(details.tabId, suggestedRule);
                 }
             }
 
@@ -993,6 +1110,7 @@ async function handleCommittedNavigation(details) {
 
 async function handleTabRemoved(tabId) {
     lastNavigationContextByTab.delete(tabId);
+    createdTabContextByTab.delete(tabId);
     removeTabAllowRule(tabId).catch(() => {});
 
     await ensureSessionStateLoaded();
@@ -1079,6 +1197,8 @@ if (globalThis.__GACR_ENABLE_TEST_HOOKS__) {
         normalizeRulePathname,
         normalizeSettings,
         resetRuntimeState,
+        ruleKeyMatches,
+        savePreferredRule,
         setCompletedRedirect,
         setPendingRedirect,
     };

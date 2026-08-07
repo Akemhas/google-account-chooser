@@ -63,6 +63,7 @@ globalThis.SETTINGS_KEYS = globalThis.SETTINGS_KEYS || [
     "autoSaveSuggestedRules",
     "preferredAccountRules",
     "accountLabels",
+    "mutedSuggestions",
 ];
 
 globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
@@ -76,6 +77,7 @@ globalThis.normalizeSettings = globalThis.normalizeSettings || ((data) => ({
     dnrInterception: data.dnrInterception ?? false,
     autoSaveSuggestedRules: data.autoSaveSuggestedRules ?? false,
     preferredAccountRules: Array.isArray(data.preferredAccountRules) ? data.preferredAccountRules : [],
+    mutedSuggestions: Array.isArray(data.mutedSuggestions) ? data.mutedSuggestions : [],
     accountLabels: data.accountLabels && typeof data.accountLabels === "object" && !Array.isArray(data.accountLabels)
         ? data.accountLabels
         : {},
