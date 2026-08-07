@@ -82,60 +82,185 @@ body {
     display: none;
 }
 
-.history-list {
-    margin-top: var(--space-3);
-    max-height: 300px;
-    overflow-y: auto;
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: var(--space-1);
+    padding: 0 5px;
+    border-radius: var(--radius-round);
+    background: var(--bg-inset);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
 }
 
-.history-inner {
-    flex-direction: column;
-    align-items: stretch;
+.popup-tab[aria-selected="true"] .tab-count {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+/* --- History: one card per service, one compact row per saved link --- */
+
+.panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-2) 0;
+    padding: 0 var(--space-1);
 }
 
-.history-text {
+.panel-head-text {
     min-width: 0;
+}
+
+.panel-title {
+    font-size: var(--text-sm);
+    font-weight: 700;
+}
+
+.panel-head .card-copy {
+    margin-top: 2px;
+}
+
+.panel-head .btn {
+    flex-shrink: 0;
+}
+
+.history-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-2);
+    max-height: 328px;
+    overflow-y: auto;
+    /* Padding keeps focus rings inside the scroller; the margin cancels it out. */
+    padding: 2px;
+    margin: -2px;
 }
 
-.history-name {
+.history-group {
+    padding: 0;
+    overflow: hidden;
+}
+
+.history-group-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+}
+
+.history-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-1);
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.history-group-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+}
+
+.history-group-name {
     font-size: var(--text-sm);
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text);
     overflow-wrap: anywhere;
 }
 
-.history-meta {
+.history-group-domain {
+    min-width: 0;
     font-size: var(--text-xs);
-    color: var(--text-muted);
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    transition: background-color var(--motion-fast);
+}
+
+.list-item:hover .history-inner,
+.list-item:focus-within .history-inner {
+    background: var(--bg-subtle);
+}
+
+.history-path {
+    grid-area: 1 / 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text);
+    /* The document id is the identity — always wrap, never ellipsize. */
     overflow-wrap: anywhere;
 }
 
-.history-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
+.history-path-all {
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
 }
 
-.history-action-btns {
+.history-switch {
+    grid-area: 1 / 2;
+    justify-self: end;
+}
+
+.history-tags {
+    grid-area: 2 / 1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
 }
 
-.list-item.is-rule-disabled .history-text {
-    opacity: 0.55;
+.history-action-btns {
+    grid-area: 2 / 2;
+    justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.list-item.is-rule-disabled .history-path,
+.list-item.is-rule-disabled .history-tags {
+    opacity: 0.5;
 }
 
 .history-editor {
+    grid-area: 3 / 1 / 4 / 3;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    margin-top: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px dashed var(--border-strong);
+}
+
+.history-editor[hidden] {
+    display: none;
 }
 
 .history-editor .field {

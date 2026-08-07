@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const dnrInterception = document.getElementById("dnrInterception");
     const autoSaveSuggestedRules = document.getElementById("autoSaveSuggestedRules");
     const historyList = document.getElementById("historyList");
+    const historyTabCount = document.getElementById("historyTabCount");
     const clearHistoryBtn = document.getElementById("clearHistoryBtn");
     const versionLabel = document.getElementById("versionLabel");
     const themeToggleBtn = document.getElementById("themeToggleBtn");
@@ -56,9 +57,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const THEME_LABELS = {system: "System", light: "Light", dark: "Dark"};
     const THEME_CYCLE = {system: "light", light: "dark", dark: "system"};
+    const THEME_ICONS = {system: "monitor", light: "sun", dark: "moon"};
 
     const renderThemeButton = () => {
-        themeToggleBtn.textContent = `Theme: ${THEME_LABELS[currentTheme]}`;
+        const label = `Theme: ${THEME_LABELS[currentTheme]} — switch to ${THEME_LABELS[THEME_CYCLE[currentTheme]]}`;
+        themeToggleBtn.replaceChildren(createIcon(THEME_ICONS[currentTheme]));
+        themeToggleBtn.setAttribute("aria-label", label);
+        themeToggleBtn.title = label;
     };
 
     themeToggleBtn.addEventListener("click", async () => {
@@ -220,27 +225,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         const inner = document.createElement("div");
         inner.className = "list-item-inner history-inner";
 
-        const text = document.createElement("div");
-        text.className = "history-text";
+        // The domain lives in the group header, so the row only carries the path.
+        const path = document.createElement("span");
+        path.className = rule.targetPathPrefix ? "history-path" : "history-path history-path-all";
+        path.textContent = rule.targetPathPrefix || "Entire service";
+        path.title = `https://${ruleName}`;
 
-        const name = document.createElement("span");
-        name.className = "history-name";
-        name.textContent = ruleName;
+        const tags = document.createElement("div");
+        tags.className = "history-tags";
 
-        const meta = document.createElement("span");
-        meta.className = "history-meta";
-        const scope = rule.targetPathPrefix ? "Document" : "Service";
-        const source = rule.sourceDomain ? ` · from ${rule.sourceDomain}` : "";
-        meta.textContent = `${scope} · ${formatAuthuserLabel(rule.authuser, settings.accountLabels)}${source}`;
+        const accountChip = document.createElement("span");
+        accountChip.className = "chip chip-xs chip-accent";
+        accountChip.textContent = formatAuthuserLabel(rule.authuser, settings.accountLabels);
+        tags.appendChild(accountChip);
 
-        text.appendChild(name);
-        text.appendChild(meta);
+        if (rule.sourceDomain) {
+            const sourceChip = document.createElement("span");
+            sourceChip.className = "chip chip-xs";
+            sourceChip.textContent = `from ${rule.sourceDomain}`;
+            tags.appendChild(sourceChip);
+        }
 
-        const actions = document.createElement("div");
-        actions.className = "history-actions";
+        if (rule.enabled === false) {
+            const pausedChip = document.createElement("span");
+            pausedChip.className = "chip chip-xs";
+            pausedChip.textContent = "Paused";
+            tags.appendChild(pausedChip);
+        }
 
         const toggle = document.createElement("label");
-        toggle.className = "switch";
+        toggle.className = "switch history-switch";
         toggle.setAttribute("aria-label", `Enable rule for ${ruleName}`);
         const toggleInput = document.createElement("input");
         toggleInput.type = "checkbox";
@@ -259,28 +273,38 @@ document.addEventListener("DOMContentLoaded", async () => {
             }));
         });
 
-        const copyBtn = document.createElement("button");
-        copyBtn.className = "btn btn-ghost";
-        copyBtn.textContent = "Copy";
-        copyBtn.setAttribute("aria-label", `Copy link for ${ruleName}`);
+        const makeIconBtn = (icon, label, className = "icon-btn") => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = className;
+            button.appendChild(createIcon(icon));
+            button.setAttribute("aria-label", label);
+            button.title = label;
+            return button;
+        };
+
+        const copyBtn = makeIconBtn("copy", `Copy link for ${ruleName}`);
+        let copyResetTimer = null;
         copyBtn.addEventListener("click", async () => {
             try {
                 await navigator.clipboard.writeText(`https://${ruleName}`);
-                showToast("Link copied");
+                // Confirm in place — a toast would cover the list on a small popup.
+                clearTimeout(copyResetTimer);
+                copyBtn.replaceChildren(createIcon("check"));
+                copyBtn.classList.add("is-done");
+                copyResetTimer = setTimeout(() => {
+                    copyBtn.replaceChildren(createIcon("copy"));
+                    copyBtn.classList.remove("is-done");
+                }, 1400);
             } catch {
                 showToast("Could not copy the link", {variant: "error"});
             }
         });
 
-        const editBtn = document.createElement("button");
-        editBtn.className = "btn btn-ghost";
-        editBtn.textContent = "Edit";
-        editBtn.setAttribute("aria-label", `Edit rule for ${ruleName}`);
+        const editBtn = makeIconBtn("edit", `Edit rule for ${ruleName}`);
+        editBtn.setAttribute("aria-expanded", "false");
 
-        const removeBtn = document.createElement("button");
-        removeBtn.className = "btn btn-danger-ghost";
-        removeBtn.textContent = "✕";
-        removeBtn.setAttribute("aria-label", `Remove rule for ${ruleName}`);
+        const removeBtn = makeIconBtn("trash", `Remove rule for ${ruleName}`, "icon-btn icon-btn-danger");
         removeBtn.addEventListener("click", () => {
             void mutateRules(
                 settings.preferredAccountRules.filter((existing) => existing.id !== rule.id),
@@ -293,8 +317,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         actionBtns.appendChild(copyBtn);
         actionBtns.appendChild(editBtn);
         actionBtns.appendChild(removeBtn);
-        actions.appendChild(toggle);
-        actions.appendChild(actionBtns);
 
         const editor = document.createElement("div");
         editor.className = "history-editor";
@@ -390,6 +412,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         editBtn.addEventListener("click", () => {
             editor.hidden = !editor.hidden;
+            editBtn.setAttribute("aria-expanded", editor.hidden ? "false" : "true");
+            editBtn.classList.toggle("is-active", !editor.hidden);
             if (!editor.hidden) pathInput.focus();
         });
 
@@ -400,8 +424,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         editor.appendChild(pathInput);
         editor.appendChild(editorRow);
 
-        inner.appendChild(text);
-        inner.appendChild(actions);
+        inner.appendChild(path);
+        inner.appendChild(toggle);
+        inner.appendChild(tags);
+        inner.appendChild(actionBtns);
         inner.appendChild(editor);
         container.appendChild(inner);
 
@@ -417,23 +443,88 @@ document.addEventListener("DOMContentLoaded", async () => {
         delete clearHistoryBtn.dataset.armed;
     };
 
+    // One card per target service; the domain lives in the header so each row
+    // only has to show the part that differs.
+    const createHistoryGroup = (domain, rules) => {
+        const serviceLabel = serviceLabelForDomain(domain);
+
+        const group = document.createElement("section");
+        group.className = "card history-group";
+        group.setAttribute("role", "group");
+        group.setAttribute("aria-label", domain);
+
+        const head = document.createElement("div");
+        head.className = "history-group-head";
+
+        const avatar = document.createElement("span");
+        avatar.className = "history-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = (serviceLabel ?? domain).charAt(0);
+
+        const text = document.createElement("div");
+        text.className = "history-group-text";
+
+        const name = document.createElement("span");
+        name.className = "history-group-name";
+        name.textContent = serviceLabel ?? domain;
+        text.appendChild(name);
+
+        if (serviceLabel) {
+            const host = document.createElement("span");
+            host.className = "history-group-domain";
+            host.textContent = domain;
+            text.appendChild(host);
+        }
+
+        const count = document.createElement("span");
+        count.className = "chip chip-xs";
+        count.textContent = String(rules.length);
+        count.title = `${rules.length} saved link${rules.length === 1 ? "" : "s"}`;
+
+        head.appendChild(avatar);
+        head.appendChild(text);
+        head.appendChild(count);
+
+        const rows = document.createElement("div");
+        rows.className = "history-rows";
+        rows.setAttribute("role", "list");
+        rows.setAttribute("aria-label", `Saved links for ${domain}`);
+        for (const rule of rules) rows.appendChild(createHistoryItem(rule));
+
+        group.appendChild(head);
+        group.appendChild(rows);
+
+        return group;
+    };
+
     const renderHistory = () => {
         disarmClearHistoryBtn();
-        historyList.innerHTML = "";
+        historyList.replaceChildren();
 
-        const sorted = [...settings.preferredAccountRules].sort((a, b) =>
-            a.targetDomain.localeCompare(b.targetDomain) ||
-            (a.targetPathPrefix ?? "").localeCompare(b.targetPathPrefix ?? ""));
+        const rules = settings.preferredAccountRules;
+        const groups = new Map();
 
-        for (const rule of sorted) {
-            historyList.appendChild(createHistoryItem(rule));
+        for (const rule of rules) {
+            if (!groups.has(rule.targetDomain)) groups.set(rule.targetDomain, []);
+            groups.get(rule.targetDomain).push(rule);
         }
 
-        if (!sorted.length) {
-            historyList.appendChild(createEmptyState("Nothing saved yet. Pick an account via the chooser, then accept the save prompt."));
+        for (const domain of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+            // Service-wide rule (empty prefix) first, then paths alphabetically.
+            const sorted = groups.get(domain).sort((a, b) =>
+                (a.targetPathPrefix ?? "").localeCompare(b.targetPathPrefix ?? ""));
+            historyList.appendChild(createHistoryGroup(domain, sorted));
         }
 
-        clearHistoryBtn.hidden = !sorted.length;
+        if (!rules.length) {
+            const empty = createEmptyState("Nothing saved yet. Pick an account via the chooser, then accept the save prompt.");
+            empty.removeAttribute("role");
+            historyList.appendChild(empty);
+        }
+
+        clearHistoryBtn.hidden = !rules.length;
+        historyTabCount.textContent = String(rules.length);
+        historyTabCount.hidden = !rules.length;
     };
 
     clearHistoryBtn.addEventListener("click", () => {

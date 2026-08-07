@@ -228,6 +228,47 @@ body {
     color: var(--danger-hover);
 }
 
+/* Square icon-only buttons */
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+}
+
+.icon-btn svg {
+    display: block;
+}
+
+.icon-btn:hover:not(:disabled) {
+    background: var(--bg-inset);
+    color: var(--text);
+}
+
+.icon-btn.is-active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.icon-btn.is-done {
+    color: var(--success);
+}
+
+.icon-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+}
+
 /* Inputs */
 
 .field {
@@ -347,6 +388,12 @@ body {
     font-size: var(--text-xs);
     font-weight: 600;
     white-space: nowrap;
+}
+
+.chip-xs {
+    min-height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
 }
 
 .chip-accent {

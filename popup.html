@@ -19,7 +19,7 @@
 <main id="gated-content" class="popup-content">
     <nav class="popup-tabs" role="tablist" aria-label="Popup sections">
         <button class="popup-tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" data-panel="overview">Overview</button>
-        <button class="popup-tab" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-panel="history" tabindex="-1">History</button>
+        <button class="popup-tab" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-panel="history" tabindex="-1">History<span class="tab-count" id="historyTabCount" hidden></span></button>
     </nav>
 
     <section class="popup-panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
@@ -91,21 +91,21 @@
     </section>
 
     <section class="popup-panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
-        <section class="card" aria-label="Saved trusted links">
-            <div class="card-head">
-                <div class="card-title">Trusted Links</div>
-                <button class="btn btn-danger-ghost" id="clearHistoryBtn" hidden>Remove all</button>
+        <div class="panel-head">
+            <div class="panel-head-text">
+                <h2 class="panel-title">Trusted Links</h2>
+                <p class="card-copy">Saved links open with their account automatically. Grouped by service — pause, edit, or remove any of them here.</p>
             </div>
-            <div class="card-copy">Saved links open with their account automatically. Pause, change the account, or remove them here — full editing lives in Manage rules &amp; sites.</div>
-            <div class="history-list" id="historyList" role="list" aria-label="Saved account rules"></div>
-        </section>
+            <button class="btn btn-danger-ghost" id="clearHistoryBtn" hidden>Remove all</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
     </section>
 </main>
 
 <footer class="popup-footer">
     <span class="footer-version" id="versionLabel"></span>
     <div class="footer-actions">
-        <button class="btn btn-ghost" id="themeToggleBtn" aria-label="Switch color theme"></button>
+        <button class="icon-btn" id="themeToggleBtn" type="button" aria-label="Switch color theme"></button>
         <button class="btn btn-ghost" id="openOptionsBtn">Manage rules &amp; sites</button>
     </div>
 </footer>

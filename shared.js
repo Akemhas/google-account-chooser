@@ -308,6 +308,62 @@ globalThis.showToast = globalThis.showToast || ((message, {variant = "success"} 
     }, 2500);
 });
 
+// Inline SVG icons (24×24 viewBox, stroke-based, currentColor) so every page
+// draws from one set without shipping icon files or inline <svg> in markup.
+globalThis.ICON_SHAPES = globalThis.ICON_SHAPES || {
+    copy: [
+        ["rect", {x: "9", y: "9", width: "11", height: "11", rx: "2"}],
+        ["path", {d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"}],
+    ],
+    check: [["polyline", {points: "20 6 9 17 4 12"}]],
+    edit: [
+        ["path", {d: "M12 20h9"}],
+        ["path", {d: "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"}],
+    ],
+    trash: [
+        ["path", {d: "M3 6h18"}],
+        ["path", {d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"}],
+        ["path", {d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"}],
+    ],
+    sun: [
+        ["circle", {cx: "12", cy: "12", r: "4"}],
+        ["path", {d: "M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"}],
+    ],
+    moon: [["path", {d: "M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"}]],
+    monitor: [
+        ["rect", {x: "2", y: "3", width: "20", height: "14", rx: "2"}],
+        ["path", {d: "M8 21h8M12 17v4"}],
+    ],
+};
+
+globalThis.createIcon = globalThis.createIcon || ((name, size = 16) => {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", String(size));
+    svg.setAttribute("height", String(size));
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+
+    for (const [tag, attrs] of ICON_SHAPES[name] ?? []) {
+        const shape = document.createElementNS(ns, tag);
+        for (const [attr, value] of Object.entries(attrs)) shape.setAttribute(attr, value);
+        svg.appendChild(shape);
+    }
+
+    return svg;
+});
+
+// Friendly name for a known Google service host ("Docs" for docs.google.com).
+globalThis.serviceLabelForDomain = globalThis.serviceLabelForDomain || ((domain) =>
+    SERVICE_PRESETS.find((preset) => preset.domain === domain)?.label ?? null);
+
 globalThis.createSiteListItem = globalThis.createSiteListItem || ((site) => {
     const container = document.createElement("div");
     container.className = "list-item";
